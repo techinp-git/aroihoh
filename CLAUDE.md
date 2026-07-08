@@ -16,9 +16,9 @@
 | `packages/shared` | types/constants ใช้ร่วม | TypeScript |
 
 Module ใน `apps/api/src/modules/`:
-- ลงแล้ว: `auth` (US-01 LIFF ID token→JWT), `menu` (US-14 CRUD + public list), `delivery` (US-15 zone check radius + fee flat/tiered/per_km), `orders` (US-02/04/05 สร้างออเดอร์ idempotent + re-check เขต/ราคา server-side + ดูออเดอร์ตัวเอง), `health`
-- pure domain (unit-tested, 17 tests): `delivery/geo.ts` (haversine, radius), `delivery/fee.ts` (computeDeliveryFee), `orders/pricing.ts` (computeOrderPricing); orders.service มี unit test แบบ mock prisma/delivery
-- ยังไม่ลง: `line` (webhook/flex/push), `payments` (US-06/07), `notifications` (BullMQ US-09), `admin` (auth จริง), status transition US-12
+- ลงแล้ว: `auth` (US-01 LIFF ID token→JWT), `menu` (US-14 CRUD + public list), `delivery` (US-15 zone check radius + fee flat/tiered/per_km), `orders` (US-02/04/05 สร้างออเดอร์ idempotent + re-check เขต/ราคา server-side + ดูออเดอร์ตัวเอง; US-12 admin เปลี่ยนสถานะไล่ลำดับ + audit log + list), `health`
+- pure domain (unit-tested, 21 tests): `delivery/geo.ts` (haversine, radius), `delivery/fee.ts` (computeDeliveryFee), `orders/pricing.ts` (computeOrderPricing), `orders/status.ts` (state machine); orders.service มี unit test แบบ mock prisma/delivery
+- ยังไม่ลง: `line` (webhook/flex/push), `payments` (US-06/07), `notifications` (BullMQ US-09), `admin` (auth จริง — ตอนนี้ใช้ AdminKeyGuard ชั่วคราว)
 
 **Guards** (`src/common/guards/`): `JwtAuthGuard` (customer Bearer JWT — ยังไม่ผูก route ไหน) · `AdminKeyGuard` (⚠️ ชั่วคราว: header `x-admin-key` = env `ADMIN_API_KEY`) ป้องกัน `/api/admin/*` จนกว่าจะมี admin auth จริง — **ห้าม**ใช้ customer JWT ป้องกัน endpoint แอดมิน
 
