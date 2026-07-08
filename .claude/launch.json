@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:admin"],
+      "port": 5174
+    },
+    {
+      "name": "liff",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:liff"],
+      "port": 5173
+    }
+  ]
+}
