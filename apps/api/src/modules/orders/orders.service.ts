@@ -2,11 +2,15 @@ import {
   Injectable,
   UnprocessableEntityException,
   BadRequestException,
+  NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { OrderStatus } from '@aroihoh/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { computeOrderPricing } from './pricing';
+import { canTransition } from './status';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
@@ -122,6 +126,64 @@ export class OrdersService {
     return this.prisma.order.findFirst({
       where: { id: orderId, customerId },
       include: this.orderInclude,
+    });
+  }
+
+  // EP-04: แอดมินดูออเดอร์ของแบรนด์ (กรอง brandId เสมอ) — filter status ได้
+  listForBrand(brandId: string, status?: OrderStatus) {
+    return this.prisma.order.findMany({
+      where: { brandId, ...(status ? { status } : {}) },
+      orderBy: { createdAt: 'desc' },
+      include: this.orderInclude,
+    });
+  }
+
+  /**
+   * US-12: เปลี่ยนสถานะออเดอร์ (แอดมิน)
+   *  - ไล่ลำดับเท่านั้น (canTransition) → 409 ถ้าเปลี่ยนข้ามขั้น/ถอยหลัง/ออกจาก terminal
+   *  - ยกเลิกต้องมีเหตุผล
+   *  - เขียน audit log ในทรานแซกชันเดียวกับการอัปเดต
+   */
+  async updateStatus(
+    brandId: string,
+    orderId: string,
+    to: OrderStatus,
+    actor: { type: string; id?: string },
+    reason?: string,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, brandId },
+    });
+    if (!order) throw new NotFoundException('order not found');
+
+    if (!canTransition(order.status, to)) {
+      throw new ConflictException(
+        `เปลี่ยนสถานะ ${order.status} → ${to} ไม่ได้ (ต้องไล่ลำดับ)`,
+      );
+    }
+    if (to === 'cancelled' && !reason?.trim()) {
+      throw new BadRequestException('การยกเลิกต้องระบุเหตุผล');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { status: to, ...(to === 'cancelled' ? { cancelReason: reason } : {}) },
+        include: this.orderInclude,
+      });
+      await tx.auditLog.create({
+        data: {
+          brandId,
+          actorType: actor.type,
+          actorId: actor.id,
+          action: 'order.status_change',
+          entityType: 'order',
+          entityId: orderId,
+          before: { status: order.status },
+          after: { status: to, cancelReason: reason ?? null },
+        },
+      });
+      return updated;
     });
   }
 }
