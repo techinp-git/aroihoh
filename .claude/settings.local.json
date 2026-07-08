@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__77dde64e-3881-4a93-8e9c-6481495c5a8c__pm_list_tasks",
+      "mcp__77dde64e-3881-4a93-8e9c-6481495c5a8c__search_documents",
+      "mcp__77dde64e-3881-4a93-8e9c-6481495c5a8c__get_document_by_id"
+    ]
+  }
+}

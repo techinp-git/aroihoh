@@ -1,0 +1,402 @@
+// AroiHoh — Prisma schema
+// โมเดล tenant: Merchant → Brand → Kitchen (ดู docs/adr/0005-tenant-schema.md)
+// กติกาเหล็ก:
+//   - business data ทุกตารางติด brandId (tenant key) · ตารางระดับเจ้าของติด merchantId
+//   - เงินเป็น Int หน่วยสตางค์เสมอ (ห้าม float)
+//   - เขตจัดส่ง/ค่าส่งผูกที่ Kitchen · เก็บทั้ง lat/lng+radius และ geometry (รองรับ ADR-02 ทั้งสองทาง)
+// ขอบเขต schema นี้ = พอสำหรับ Sprint 1 MVP (EP-01 + US-07/08/09/11/12/14/15)
+//   ยังไม่ใส่: coupon(US-17), broadcast(US-18), subscription/catering, loyalty — เพิ่มเป็น migration ทีหลัง
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ─────────────────────────── Tenant hierarchy ───────────────────────────
+
+enum MerchantStatus {
+  active
+  suspended
+}
+
+model Merchant {
+  id        String         @id @default(uuid())
+  name      String
+  slug      String         @unique
+  status    MerchantStatus @default(active)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  brands     Brand[]
+  kitchens   Kitchen[]
+  adminUsers AdminUser[]
+
+  @@map("merchants")
+}
+
+model Brand {
+  id         String  @id @default(uuid())
+  merchantId String
+  name       String
+  slug       String
+  logoUrl    String?
+  theme      Json?
+  isActive   Boolean @default(true)
+
+  // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
+  lineChannelId        String?
+  lineChannelSecretEnc String?
+  lineChannelTokenEnc  String?
+  liffId               String?
+  richMenuId           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id])
+  brandKitchens BrandKitchen[]
+  categories    MenuCategory[]
+  menuItems     MenuItem[]
+  customers     Customer[]
+  orders        Order[]
+  payments      Payment[]
+  messageLogs   MessageLog[]
+  adminBrands   AdminBrand[]
+  auditLogs     AuditLog[]
+
+  @@unique([merchantId, slug])
+  @@index([merchantId])
+  @@map("brands")
+}
+
+enum ZoneType {
+  radius
+  polygon
+}
+
+model Kitchen {
+  id            String                                  @id @default(uuid())
+  merchantId    String
+  name          String
+  lat           Float
+  lng           Float
+  zoneType      ZoneType                                @default(radius)
+  maxDistanceKm Float? // ใช้เมื่อ zoneType = radius (กลยุทธ์ Haversine)
+  // ใช้เมื่อ zoneType = polygon (กลยุทธ์ PostGIS) — query ผ่าน raw SQL (ST_Contains)
+  deliveryZone  Unsupported("geometry(Polygon, 4326)")?
+  isOpen        Boolean                                 @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant      Merchant          @relation(fields: [merchantId], references: [id])
+  brandKitchens BrandKitchen[]
+  feeRules      DeliveryFeeRule[]
+  orders        Order[]
+
+  @@index([merchantId])
+  @@map("kitchens")
+}
+
+// ครัวเดียวแชร์หลายแบรนด์ได้ (คอนเซปต์ "หลายแบรนด์ ครัวเดียว")
+model BrandKitchen {
+  brandId   String
+  kitchenId String
+
+  brand   Brand   @relation(fields: [brandId], references: [id])
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id])
+
+  @@id([brandId, kitchenId])
+  @@index([kitchenId])
+  @@map("brand_kitchens")
+}
+
+enum FeeRuleType {
+  flat
+  tiered
+  per_km
+}
+
+// US-15: กฎค่าส่ง flat/tiered/per_km — พารามิเตอร์เก็บใน params (เช่น tiers, perKm, baseFee)
+model DeliveryFeeRule {
+  id        String      @id @default(uuid())
+  kitchenId String
+  type      FeeRuleType
+  params    Json
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id])
+
+  @@index([kitchenId])
+  @@map("delivery_fee_rules")
+}
+
+// ─────────────────────────── Customers (PII — PDPA) ───────────────────────────
+
+model Customer {
+  id          String   @id @default(uuid())
+  brandId     String
+  lineUserId  String
+  displayName String?
+  pictureUrl  String?
+  phoneEnc    String? // เข้ารหัส — ห้าม log
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brand     Brand     @relation(fields: [brandId], references: [id])
+  addresses Address[]
+  orders    Order[]
+
+  @@unique([brandId, lineUserId])
+  @@index([brandId])
+  @@map("customers")
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  customerId String
+  label      String?
+  detail     String
+  lat        Float
+  lng        Float
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  orders   Order[]
+
+  @@index([customerId])
+  @@map("addresses")
+}
+
+// ─────────────────────────── Menu (US-14) ───────────────────────────
+
+model MenuCategory {
+  id        String  @id @default(uuid())
+  brandId   String
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  brand Brand      @relation(fields: [brandId], references: [id])
+  items MenuItem[]
+
+  @@index([brandId])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  brandId     String
+  categoryId  String?
+  name        String
+  description String?
+  price       Int // สตางค์
+  imageUrl    String?
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brand      Brand         @relation(fields: [brandId], references: [id])
+  category   MenuCategory? @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+
+  @@index([brandId, categoryId])
+  @@map("menu_items")
+}
+
+// ─────────────────────────── Orders ───────────────────────────
+
+enum OrderStatus {
+  pending
+  confirmed
+  preparing
+  delivering
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  promptpay
+  cod
+}
+
+enum PaymentStatus {
+  unpaid
+  pending
+  paid
+  expired
+  refunded
+}
+
+model Order {
+  id            String        @id @default(uuid())
+  brandId       String
+  kitchenId     String
+  customerId    String
+  addressId     String?
+  status        OrderStatus   @default(pending)
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(unpaid)
+
+  // ยอดทั้งหมดหน่วยสตางค์ — คำนวณฝั่ง server เท่านั้น
+  subtotal    Int
+  deliveryFee Int @default(0)
+  discount    Int @default(0)
+  total       Int
+
+  note           String?
+  cancelReason   String?
+  scheduledAt    DateTime? // US-22/US-28 pre-order
+  idempotencyKey String    @unique // US-04: กันสร้างซ้ำ
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand    Brand       @relation(fields: [brandId], references: [id])
+  kitchen  Kitchen     @relation(fields: [kitchenId], references: [id])
+  customer Customer    @relation(fields: [customerId], references: [id])
+  address  Address?    @relation(fields: [addressId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([brandId, status])
+  @@index([customerId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  menuItemId   String
+  nameSnapshot String // เก็บชื่อ ณ ตอนสั่ง กันเมนูแก้ทีหลัง
+  unitPrice    Int
+  qty          Int
+  lineTotal    Int
+  note         String?
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// US-06: payment webhook ต้อง idempotent (unique providerRef)
+model Payment {
+  id          String        @id @default(uuid())
+  orderId     String
+  brandId     String
+  method      PaymentMethod
+  status      PaymentStatus @default(pending)
+  amount      Int
+  providerRef String?       @unique
+  qrPayload   String?
+  expiresAt   DateTime?
+  paidAt      DateTime?
+  raw         Json?
+  createdAt   DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+  brand Brand @relation(fields: [brandId], references: [id])
+
+  @@index([brandId])
+  @@map("payments")
+}
+
+// ─────────────────────────── Messaging (US-09) ───────────────────────────
+
+enum MessageType {
+  flex_confirm
+  status_push
+  welcome
+  broadcast
+}
+
+enum MessageStatus {
+  queued
+  sent
+  failed
+}
+
+// กันส่งซ้ำด้วย dedupeKey (เช่น orderId+status) + คุมโควตา LINE
+model MessageLog {
+  id                String        @id @default(uuid())
+  brandId           String
+  customerId        String?
+  orderId           String?
+  type              MessageType
+  dedupeKey         String        @unique
+  status            MessageStatus @default(queued)
+  providerMessageId String?
+  error             String?
+  createdAt         DateTime      @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id])
+
+  @@index([brandId])
+  @@map("message_logs")
+}
+
+// ─────────────────────────── Admin / audit ───────────────────────────
+
+enum AdminRole {
+  owner
+  manager
+  staff
+}
+
+model AdminUser {
+  id           String    @id @default(uuid())
+  merchantId   String
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole @default(staff)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  merchant    Merchant     @relation(fields: [merchantId], references: [id])
+  adminBrands AdminBrand[]
+
+  @@index([merchantId])
+  @@map("admin_users")
+}
+
+// สิทธิ์ staff ต่อแบรนด์ (เห็นเฉพาะแบรนด์ที่ดูแล)
+model AdminBrand {
+  adminUserId String
+  brandId     String
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id])
+  brand     Brand     @relation(fields: [brandId], references: [id])
+
+  @@id([adminUserId, brandId])
+  @@index([brandId])
+  @@map("admin_brands")
+}
+
+// US-12: ยกเลิก/เปลี่ยนสถานะต้องมี audit log
+model AuditLog {
+  id         String   @id @default(uuid())
+  brandId    String
+  actorType  String // admin | system | customer
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id])
+
+  @@index([brandId, entityType, entityId])
+  @@map("audit_logs")
+}

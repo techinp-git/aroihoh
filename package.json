@@ -1,0 +1,21 @@
+{
+  "name": "aroihoh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Brand.Delivery — LINE OA + LIFF food ordering & delivery platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/liff && npm run build -w apps/admin",
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:liff": "npm run dev -w apps/liff",
+    "dev:admin": "npm run dev -w apps/admin",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
