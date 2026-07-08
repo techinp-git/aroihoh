@@ -17,5 +17,6 @@ import { AuthService } from './auth.service';
   ],
   controllers: [AuthController],
   providers: [AuthService],
+  exports: [JwtModule], // ให้ module อื่นใช้ JwtAuthGuard ได้ (verify customer JWT)
 })
 export class AuthModule {}
