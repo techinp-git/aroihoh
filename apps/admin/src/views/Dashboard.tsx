@@ -9,18 +9,24 @@ import {
   type DailyReport,
 } from '../api';
 
+// วันที่วันนี้ตามเขตกรุงเทพ (YYYY-MM-DD) สำหรับ default + ค่าสูงสุดของ date picker
+const todayBangkok = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+
 export default function Dashboard({ brandId }: { brandId: string }) {
   const [report, setReport] = useState<DailyReport | null>(null);
   const [recent, setRecent] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [date, setDate] = useState(todayBangkok());
+  const isToday = date === todayBangkok();
 
   useEffect(() => {
     if (!brandId) return;
     let alive = true;
     setLoading(true);
     setError('');
-    Promise.all([dailyReport(brandId), listOrders(brandId)])
+    Promise.all([dailyReport(brandId, date), listOrders(brandId)])
       .then(([rep, orders]) => {
         if (!alive) return;
         setReport(rep);
@@ -31,7 +37,7 @@ export default function Dashboard({ brandId }: { brandId: string }) {
     return () => {
       alive = false;
     };
-  }, [brandId]);
+  }, [brandId, date]);
 
   const active = report
     ? Object.entries(report.byStatus)
@@ -44,10 +50,22 @@ export default function Dashboard({ brandId }: { brandId: string }) {
 
   return (
     <>
-      <div className="count-line">สรุปยอดวันนี้ ({report?.date || '—'})</div>
+      <div className="count-line" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <span>{isToday ? 'สรุปยอดวันนี้' : 'สรุปยอดวันที่'} ({report?.date || '—'})</span>
+        <span style={{ flex: 1 }} />
+        <input
+          type="date"
+          value={date}
+          max={todayBangkok()}
+          onChange={(e) => setDate(e.target.value || todayBangkok())}
+        />
+        {!isToday && (
+          <button className="btn ghost sm" onClick={() => setDate(todayBangkok())}>วันนี้</button>
+        )}
+      </div>
       <section className="stats">
         <div className="stat">
-          <div className="stat-label">📦 ออเดอร์วันนี้</div>
+          <div className="stat-label">📦 ออเดอร์{isToday ? 'วันนี้' : ''}</div>
           <div className="stat-value">{v(report?.count ?? 0)}</div>
         </div>
         <div className="stat">
