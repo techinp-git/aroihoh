@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   listOrders,
   changeStatus,
+  markPaid,
   baht,
   STATUS_TH,
   ALL_STATUSES,
@@ -52,6 +53,7 @@ export default function Orders({ brandId }: { brandId: string }) {
     const r = window.prompt(`เหตุผลการยกเลิกออเดอร์ #${o.id.slice(0, 8)}`);
     if (r?.trim()) act(o, () => changeStatus(brandId, o.id, 'cancelled', r.trim()));
   };
+  const receivePayment = (o: Order) => act(o, () => markPaid(brandId, o.id));
 
   return (
     <>
@@ -119,6 +121,13 @@ export default function Orders({ brandId }: { brandId: string }) {
                             → {STATUS_TH[to]}
                           </button>
                         )}
+                        {o.status !== 'cancelled' &&
+                          o.paymentMethod === 'cod' &&
+                          o.paymentStatus !== 'paid' && (
+                            <button className="btn ghost sm" disabled={busy === o.id} onClick={() => receivePayment(o)}>
+                              💵 รับเงินแล้ว
+                            </button>
+                          )}
                         {!terminal && (
                           <button className="btn danger sm" disabled={busy === o.id} onClick={() => cancel(o)}>
                             ยกเลิก

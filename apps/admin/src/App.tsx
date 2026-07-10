@@ -168,7 +168,14 @@ export default function App() {
           {view === 'orders' && <Orders brandId={brandId} />}
           {view === 'menu' && <Menu brandId={brandId} />}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}
-          {view === 'settings' && <Settings profile={profile} />}
+          {view === 'settings' && (
+            <Settings
+              profile={profile}
+              brandId={brandId}
+              brands={brands}
+              onBrandsChanged={loadBrands}
+            />
+          )}
         </main>
       </div>
     </div>

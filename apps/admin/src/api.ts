@@ -69,12 +69,16 @@ export async function login(email: string, password: string) {
 }
 
 // ── Types ──
-export interface Brand { id: string; name: string; slug: string; isActive: boolean; }
+export interface Brand { id: string; name: string; slug: string; isActive: boolean; codEnabled?: boolean; }
 export interface OrderItem { id: string; nameSnapshot: string; unitPrice: number; qty: number; lineTotal: number; }
 export interface Order {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
   subtotal: number; deliveryFee: number; total: number;
   note: string | null; cancelReason: string | null; createdAt: string; items: OrderItem[];
+}
+export interface DailyReport {
+  date: string; count: number; completed: number; cancelled: number;
+  revenue: number; avgOrderValue: number; byStatus: Record<string, number>;
 }
 export interface MenuItem {
   id: string; name: string; description: string | null; price: number;
@@ -112,6 +116,23 @@ export const updateItemPrice = (brandId: string, id: string, price: number) =>
     method: 'PATCH',
     body: JSON.stringify({ price }),
   });
+
+export const dailyReport = (brandId: string, date?: string) =>
+  adminFetch<DailyReport>(
+    `/admin/reports/daily?brandId=${encodeURIComponent(brandId)}` + (date ? `&date=${date}` : ''),
+  );
+
+export const markPaid = (brandId: string, orderId: string) =>
+  adminFetch<{ paymentStatus: string; alreadyPaid: boolean }>(
+    `/admin/orders/${orderId}/mark-paid?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH' },
+  );
+
+export const setBrandCod = (brandId: string, enabled: boolean) =>
+  adminFetch<{ id: string; codEnabled: boolean }>(
+    `/admin/brands/${brandId}/cod`,
+    { method: 'PATCH', body: JSON.stringify({ enabled }) },
+  );
 
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {

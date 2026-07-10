@@ -1,14 +1,17 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import {
   listOrders,
+  dailyReport,
   baht,
   STATUS_TH,
   ACTIVE_STATUSES,
   type Order,
+  type DailyReport,
 } from '../api';
 
 export default function Dashboard({ brandId }: { brandId: string }) {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [report, setReport] = useState<DailyReport | null>(null);
+  const [recent, setRecent] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -17,8 +20,12 @@ export default function Dashboard({ brandId }: { brandId: string }) {
     let alive = true;
     setLoading(true);
     setError('');
-    listOrders(brandId)
-      .then((o) => alive && setOrders(o))
+    Promise.all([dailyReport(brandId), listOrders(brandId)])
+      .then(([rep, orders]) => {
+        if (!alive) return;
+        setReport(rep);
+        setRecent(orders.slice(0, 6));
+      })
       .catch((e) => alive && setError((e as Error).message))
       .finally(() => alive && setLoading(false));
     return () => {
@@ -26,35 +33,34 @@ export default function Dashboard({ brandId }: { brandId: string }) {
     };
   }, [brandId]);
 
-  const s = useMemo(() => {
-    const active = orders.filter((o) => ACTIVE_STATUSES.has(o.status)).length;
-    const completed = orders.filter((o) => o.status === 'completed').length;
-    const revenue = orders.filter((o) => o.status !== 'cancelled').reduce((a, o) => a + o.total, 0);
-    return { total: orders.length, active, completed, revenue };
-  }, [orders]);
-
-  const recent = orders.slice(0, 6);
+  const active = report
+    ? Object.entries(report.byStatus)
+        .filter(([s]) => ACTIVE_STATUSES.has(s))
+        .reduce((a, [, n]) => a + n, 0)
+    : 0;
 
   if (error) return <div className="alert error">{error}</div>;
+  const v = (n: number | string) => (loading ? '…' : n);
 
   return (
     <>
+      <div className="count-line">สรุปยอดวันนี้ ({report?.date || '—'})</div>
       <section className="stats">
         <div className="stat">
-          <div className="stat-label">📦 ออเดอร์ทั้งหมด</div>
-          <div className="stat-value">{loading ? '…' : s.total}</div>
+          <div className="stat-label">📦 ออเดอร์วันนี้</div>
+          <div className="stat-value">{v(report?.count ?? 0)}</div>
         </div>
         <div className="stat">
           <div className="stat-label">⏳ กำลังดำเนินการ</div>
-          <div className="stat-value">{loading ? '…' : s.active}</div>
+          <div className="stat-value">{v(active)}</div>
         </div>
         <div className="stat">
           <div className="stat-label">✅ ส่งสำเร็จ</div>
-          <div className="stat-value">{loading ? '…' : s.completed}</div>
+          <div className="stat-value">{v(report?.completed ?? 0)}</div>
         </div>
         <div className="stat">
           <div className="stat-label">💰 ยอดขาย (ไม่รวมยกเลิก)</div>
-          <div className="stat-value accent">{loading ? '…' : baht(s.revenue)}</div>
+          <div className="stat-value accent">{v(baht(report?.revenue ?? 0))}</div>
         </div>
       </section>
 
