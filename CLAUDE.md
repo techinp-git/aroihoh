@@ -21,7 +21,8 @@ Module ใน `apps/api/src/modules/`:
 - ลงเพิ่ม: `payments` (US-07 COD mark-paid + config codEnabled ต่อแบรนด์), `reports` (US-13 backend — GET /admin/reports/daily, pure `summarizeOrders`), `customers` (US-35 admin list+detail+ประวัติออเดอร์, PDPA ไม่คืน phoneEnc, pure `computeCustomerStats`)
 - ลงเพิ่ม: `customers` (US-35), `chat` (US-21 core — chat_messages, conversations/thread/send; ยิงเข้า LINE จริงรอ SETUP-1)
 - ยังไม่ลง: `line` (webhook/flex/push US-08/10), payment gateway US-06 (รอ SETUP-4), `notifications` (BullMQ US-09), `telegram` (EP-11)
-- migrations: 0001_init · 0002_add_cod_enabled · 0003_chat_messages · 0004_customer_tags
+- migrations: 0001_init · 0002_add_cod_enabled · 0003_chat_messages · 0004_customer_tags · 0005_store_hours
+- US-16 store: kitchens.openTime/closeTime + isOpen · `store` module (GET /admin/store, PATCH pause/hours) · delivery.quote เช็ค isAccepting (พัก/นอกเวลา → order 422) · Settings มีการ์ดสถานะร้าน
 - US-21 chat: 3-column (conversations | thread | customer panel = ประวัติออเดอร์+แท็ก) · tag ลูกค้า = customers.tags + PATCH /admin/customers/:id/tags · ที่เหลือ = LINE ส่ง/รับจริง (SETUP-1)
 - US-11 realtime: SSE `GET /api/admin/orders/stream?brandId=&token=` (order-events.service RxJS bus, emit ตอน create/status) · admin Orders มี beep+flash+badge 🟢, EventSource reconnect · LIFF track poll 5s
 
