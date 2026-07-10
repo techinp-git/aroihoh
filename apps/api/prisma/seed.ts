@@ -4,6 +4,7 @@
  * idempotent: ใช้ upsert ด้วย key ที่คงที่
  */
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -85,7 +86,27 @@ async function main() {
     });
   }
 
-  console.log('seed done:', { merchantId: merchant.id, brandId: brand.id, kitchenId: kitchen.id });
+  // owner admin (US-29) — ล็อกอินหลังบ้านจริง
+  const ownerEmail = process.env.ADMIN_SEED_EMAIL || 'owner@chimchiva.local';
+  const ownerPass = process.env.ADMIN_SEED_PASSWORD || 'owner1234';
+  await prisma.adminUser.upsert({
+    where: { email: ownerEmail },
+    update: {},
+    create: {
+      merchantId: merchant.id,
+      email: ownerEmail,
+      passwordHash: await bcrypt.hash(ownerPass, 10),
+      name: 'เจ้าของร้าน',
+      role: 'owner',
+    },
+  });
+
+  console.log('seed done:', {
+    merchantId: merchant.id,
+    brandId: brand.id,
+    kitchenId: kitchen.id,
+    ownerLogin: `${ownerEmail} / ${ownerPass}`,
+  });
 }
 
 main()

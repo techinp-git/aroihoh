@@ -1,16 +1,26 @@
 import { useEffect, useState, useCallback } from 'react';
-import { getAdminKey, setAdminKey, listBrands, type Brand } from './api';
+import {
+  getAdminToken,
+  getAdminProfile,
+  setAuth,
+  login as apiLogin,
+  listBrands,
+  type Brand,
+  type AdminProfile,
+} from './api';
 import Dashboard from './views/Dashboard';
 import Orders from './views/Orders';
 import Menu from './views/Menu';
+import Users from './views/Users';
 import Settings from './views/Settings';
 
-type View = 'dashboard' | 'orders' | 'menu' | 'settings';
+type View = 'dashboard' | 'orders' | 'menu' | 'users' | 'settings';
 
-const NAV: { key: View; label: string; ic: string }[] = [
+const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean }[] = [
   { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠' },
   { key: 'orders', label: 'ออเดอร์', ic: '🧾' },
   { key: 'menu', label: 'เมนู', ic: '🍜' },
+  { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', ownerOnly: true },
   { key: 'settings', label: 'ตั้งค่า', ic: '⚙️' },
 ];
 
@@ -18,39 +28,56 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   dashboard: { title: 'แดชบอร์ด', sub: 'ภาพรวมออเดอร์และยอดขาย' },
   orders: { title: 'จัดการออเดอร์', sub: 'ไล่สถานะ / ยกเลิก (EP-04)' },
   menu: { title: 'จัดการเมนู', sub: 'เปิด-ปิดขาย / แก้ราคา (US-14)' },
-  settings: { title: 'ตั้งค่า', sub: 'การเข้าถึงและการเชื่อมต่อ' },
+  users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
+  settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },
 };
 
-/** หน้ากรอก key ก่อนเข้าใช้ (ชั่วคราว — จะแทนด้วย login จริง US-29) */
-function KeyGate({ onEnter }: { onEnter: () => void }) {
-  const [key, setKey] = useState('');
+const ROLE_TH: Record<string, string> = { owner: 'เจ้าของ', manager: 'ผู้จัดการ', staff: 'พนักงาน' };
+
+/** หน้าล็อกอินจริง (US-29) แทน key-gate เดิม */
+function Login({ onSuccess }: { onSuccess: (p: AdminProfile) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!email || !password) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { token, admin } = await apiLogin(email, password);
+      setAuth(token, admin);
+      onSuccess(admin);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="gate">
       <div className="gate-card">
         <div className="logo">🍚</div>
         <h1>AroiHoh Admin</h1>
-        <p>ใส่ admin key เพื่อเข้าใช้งานหลังบ้าน (ชั่วคราว รอระบบล็อกอินจริง)</p>
+        <p>เข้าสู่ระบบหลังบ้าน</p>
+        {error && <div className="alert error" style={{ marginBottom: 14 }}>{error}</div>}
+        <label className="field" style={{ marginBottom: 12 }}>
+          <span>อีเมล</span>
+          <input value={email} autoFocus onChange={(e) => setEmail(e.target.value)} placeholder="owner@example.com" />
+        </label>
         <label className="field">
-          <span>admin key</span>
+          <span>รหัสผ่าน</span>
           <input
             type="password"
-            value={key}
-            autoFocus
-            placeholder="x-admin-key"
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && key.trim() && (setAdminKey(key.trim()), onEnter())}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
         </label>
-        <button
-          className="btn primary block"
-          style={{ marginTop: 16 }}
-          disabled={!key.trim()}
-          onClick={() => {
-            setAdminKey(key.trim());
-            onEnter();
-          }}
-        >
-          เข้าสู่ระบบ
+        <button className="btn primary block" style={{ marginTop: 18 }} disabled={busy} onClick={submit}>
+          {busy ? <span className="spinner" /> : 'เข้าสู่ระบบ'}
         </button>
       </div>
     </div>
@@ -58,7 +85,9 @@ function KeyGate({ onEnter }: { onEnter: () => void }) {
 }
 
 export default function App() {
-  const [hasKey, setHasKey] = useState(!!getAdminKey());
+  const [profile, setProfile] = useState<AdminProfile | null>(
+    getAdminToken() ? getAdminProfile() : null,
+  );
   const [view, setView] = useState<View>('dashboard');
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState('');
@@ -76,13 +105,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hasKey) loadBrands();
-  }, [hasKey, loadBrands]);
+    if (profile) loadBrands();
+  }, [profile, loadBrands]);
 
-  if (!hasKey) {
-    return <KeyGate onEnter={() => setHasKey(true)} />;
+  if (!profile) {
+    return <Login onSuccess={setProfile} />;
   }
 
+  const nav = NAV.filter((n) => !n.ownerOnly || profile.role === 'owner');
   const t = TITLES[view];
 
   return (
@@ -95,7 +125,7 @@ export default function App() {
             <div className="tag">Admin Console</div>
           </div>
         </div>
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <button
             key={n.key}
             className={`nav-item ${view === n.key ? 'active' : ''}`}
@@ -106,7 +136,9 @@ export default function App() {
           </button>
         ))}
         <div className="spacer" />
-        <div className="side-foot">เฟส A · ชิมชีวา One Price 60</div>
+        <div className="side-foot">
+          {profile.name} · {ROLE_TH[profile.role] || profile.role}
+        </div>
       </aside>
 
       <div className="main">
@@ -130,14 +162,13 @@ export default function App() {
 
         <main className="content">
           {brandError && (
-            <div className="alert error">
-              โหลดแบรนด์ไม่ได้: {brandError} — ตรวจ admin key ที่หน้า “ตั้งค่า”
-            </div>
+            <div className="alert error">โหลดแบรนด์ไม่ได้: {brandError}</div>
           )}
           {view === 'dashboard' && <Dashboard brandId={brandId} />}
           {view === 'orders' && <Orders brandId={brandId} />}
           {view === 'menu' && <Menu brandId={brandId} />}
-          {view === 'settings' && <Settings onSaved={loadBrands} />}
+          {view === 'users' && <Users brands={brands} selfId={profile.id} />}
+          {view === 'settings' && <Settings profile={profile} />}
         </main>
       </div>
     </div>

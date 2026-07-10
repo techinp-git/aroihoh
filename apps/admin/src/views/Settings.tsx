@@ -1,37 +1,27 @@
-import { useState } from 'react';
-import { API_BASE, getAdminKey, setAdminKey, clearAdminKey } from '../api';
+import { API_BASE, clearAuth, ROLE_TH, type AdminProfile } from '../api';
 
-export default function Settings({ onSaved }: { onSaved: () => void }) {
-  const [key, setKey] = useState(getAdminKey());
-  const [saved, setSaved] = useState(false);
-
-  const save = () => {
-    setAdminKey(key.trim());
-    setSaved(true);
-    onSaved();
-    setTimeout(() => setSaved(false), 1500);
-  };
-
+export default function Settings({ profile }: { profile: AdminProfile | null }) {
   const signOut = () => {
-    clearAdminKey();
+    clearAuth();
     location.reload();
   };
 
   return (
     <div style={{ maxWidth: 520 }}>
-      {saved && <div className="alert info">บันทึกแล้ว</div>}
-
       <div className="card" style={{ padding: 20, marginBottom: 16 }}>
-        <h2 style={{ marginTop: 0, fontSize: 15 }}>การเข้าถึง (ชั่วคราว)</h2>
-        <p className="pay" style={{ marginTop: 0, marginBottom: 16 }}>
-          ตอนนี้ใช้ admin key ชั่วคราว — จะแทนด้วยระบบล็อกอินจริง (US-29) เร็ว ๆ นี้
-        </p>
-        <label className="field" style={{ marginBottom: 16 }}>
-          <span>admin key</span>
-          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="x-admin-key" />
-        </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn primary" onClick={save}>บันทึก</button>
+        <h2 style={{ marginTop: 0, fontSize: 15 }}>บัญชีของฉัน</h2>
+        {profile ? (
+          <div style={{ display: 'grid', gap: 6, fontSize: 14 }}>
+            <div><b>{profile.name}</b></div>
+            <div className="pay">{profile.email}</div>
+            <div>
+              บทบาท: <span className="pill on">{ROLE_TH[profile.role] || profile.role}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="pay">—</div>
+        )}
+        <div style={{ marginTop: 16 }}>
           <button className="btn danger" onClick={signOut}>ออกจากระบบ</button>
         </div>
       </div>

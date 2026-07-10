@@ -10,7 +10,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { MenuService } from './menu.service';
-import { AdminKeyGuard } from '../../common/guards/admin-key.guard';
+import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
+import { assertBrandAccess } from '../../common/admin-scope';
 import {
   CreateCategoryDto,
   CreateMenuItemDto,
@@ -28,48 +30,60 @@ export class MenuController {
     return this.menu.getPublicMenu(brandId);
   }
 
-  // ── Admin (⚠️ AdminKeyGuard ชั่วคราว — รอ admin auth จริง) ──
-  @UseGuards(AdminKeyGuard)
+  // ── Admin (AdminJwtGuard + brand scope) ──
+  @UseGuards(AdminJwtGuard)
   @Get('admin/menu')
-  listAll(@Query('brandId') brandId: string) {
+  listAll(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    assertBrandAccess(admin, brandId);
     return this.menu.listAll(brandId);
   }
 
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminJwtGuard)
   @Post('admin/menu/categories')
-  createCategory(@Body() dto: CreateCategoryDto) {
+  createCategory(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateCategoryDto) {
+    assertBrandAccess(admin, dto.brandId);
     return this.menu.createCategory(dto);
   }
 
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminJwtGuard)
   @Post('admin/menu/items')
-  createItem(@Body() dto: CreateMenuItemDto) {
+  createItem(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateMenuItemDto) {
+    assertBrandAccess(admin, dto.brandId);
     return this.menu.createItem(dto);
   }
 
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/menu/items/:id')
   updateItem(
+    @CurrentAdmin() admin: AdminJwt,
     @Query('brandId') brandId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMenuItemDto,
   ) {
+    assertBrandAccess(admin, brandId);
     return this.menu.updateItem(brandId, id, dto);
   }
 
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/menu/items/:id/availability')
   setAvailability(
+    @CurrentAdmin() admin: AdminJwt,
     @Query('brandId') brandId: string,
     @Param('id') id: string,
     @Body() dto: SetAvailabilityDto,
   ) {
+    assertBrandAccess(admin, brandId);
     return this.menu.setAvailability(brandId, id, dto.isAvailable);
   }
 
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminJwtGuard)
   @Delete('admin/menu/items/:id')
-  deleteItem(@Query('brandId') brandId: string, @Param('id') id: string) {
+  deleteItem(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Param('id') id: string,
+  ) {
+    assertBrandAccess(admin, brandId);
     return this.menu.deleteItem(brandId, id);
   }
 }
