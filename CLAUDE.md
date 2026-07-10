@@ -16,11 +16,12 @@
 | `packages/shared` | types/constants ใช้ร่วม | TypeScript |
 
 Module ใน `apps/api/src/modules/`:
-- ลงแล้ว: `auth` (US-01 LIFF ID token→JWT), `menu` (US-14 CRUD + public list), `delivery` (US-15 zone check radius + fee flat/tiered/per_km), `orders` (US-02/04/05 สร้างออเดอร์ idempotent + re-check เขต/ราคา server-side + ดูออเดอร์ตัวเอง; US-12 admin เปลี่ยนสถานะไล่ลำดับ + audit log + list), `health`
-- pure domain (unit-tested, 21 tests): `delivery/geo.ts` (haversine, radius), `delivery/fee.ts` (computeDeliveryFee), `orders/pricing.ts` (computeOrderPricing), `orders/status.ts` (state machine); orders.service มี unit test แบบ mock prisma/delivery
-- ยังไม่ลง: `line` (webhook/flex/push), `payments` (US-06/07), `notifications` (BullMQ US-09), `admin` (auth จริง — ตอนนี้ใช้ AdminKeyGuard ชั่วคราว)
+- ลงแล้ว: `auth` (US-01 LIFF ID token→JWT), `menu` (US-14 CRUD + public list), `delivery` (US-15 zone check radius + fee flat/tiered/per_km), `orders` (US-02/04/05 สร้างออเดอร์ idempotent + re-check เขต/ราคา server-side + ดูออเดอร์ตัวเอง; US-12 admin เปลี่ยนสถานะไล่ลำดับ + audit log + list), `admin-auth` (US-29 login email/password→admin JWT + me), `admin-users` (US-30 CRUD user + RBAC role/สิทธิ์ต่อแบรนด์), `brands`, `health`
+- pure domain (unit-tested, 21 tests): `delivery/geo.ts`, `delivery/fee.ts`, `orders/pricing.ts`, `orders/status.ts`; orders.service มี unit test mock prisma/delivery
+- ยังไม่ลง: `line` (webhook/flex/push), `payments` (US-06/07), `notifications` (BullMQ US-09), `telegram` (EP-11)
 
-**Guards** (`src/common/guards/`): `JwtAuthGuard` (customer Bearer JWT — ยังไม่ผูก route ไหน) · `AdminKeyGuard` (⚠️ ชั่วคราว: header `x-admin-key` = env `ADMIN_API_KEY`) ป้องกัน `/api/admin/*` จนกว่าจะมี admin auth จริง — **ห้าม**ใช้ customer JWT ป้องกัน endpoint แอดมิน
+**Guards** (`src/common/guards/`): `JwtAuthGuard` (customer Bearer JWT — ผูก orders) · `AdminJwtGuard` (admin Bearer JWT, secret แยก `ADMIN_JWT_SECRET`, fail-fast ถ้าไม่ตั้ง) + `RolesGuard` (`@Roles`) ป้องกัน `/api/admin/*` — **ห้าม**ใช้ customer JWT ป้องกัน endpoint แอดมิน · ทุก endpoint admin ที่รับ brandId ต้องผ่าน `assertBrandAccess(admin, brandId)` (กันข้ามแบรนด์) · `AdminKeyGuard` เลิกใช้แล้ว (แทนด้วย admin login US-29)
+- Roles: `owner` (จัดการ user + ทุกอย่าง) · `manager` (ร้าน/เมนู/ออเดอร์ ทุกแบรนด์) · `staff` (เฉพาะแบรนด์ที่ผูกใน admin_brands) · owner admin จาก seed: env `ADMIN_SEED_EMAIL`/`ADMIN_SEED_PASSWORD`
 
 ## Commands
 ```bash
