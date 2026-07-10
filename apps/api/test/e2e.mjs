@@ -105,6 +105,26 @@ async function main() {
   ok(!!item?.isAvailable, 'มีเมนูที่พร้อมขายอย่างน้อย 1 รายการ');
   const unitPrice = item.price; // 6000
 
+  // 4b) เมนู CRUD (US-14 admin) — categories + create + update + delete
+  const cats = await req('GET', `/admin/menu/categories?brandId=${brandId}`, { token: adminToken });
+  ok(cats.status === 200 && Array.isArray(cats.body), 'GET /admin/menu/categories');
+  const created = await req('POST', '/admin/menu/items', {
+    token: adminToken,
+    body: { brandId, name: 'E2E เมนูชั่วคราว', price: 9900 },
+  });
+  ok(is2xx(created.status) && created.body?.id, 'สร้างเมนูใหม่ (admin)', JSON.stringify(created.body));
+  const newItemId = created.body?.id;
+  const upd = await req('PATCH', `/admin/menu/items/${newItemId}?brandId=${brandId}`, {
+    token: adminToken,
+    body: { price: 8800, description: 'แก้แล้ว' },
+  });
+  ok(upd.status === 200 && upd.body?.price === 8800, 'แก้ไขเมนู (ราคา/รายละเอียด)');
+  // cross-tenant guard: brandId มั่ว → ต้องไม่ให้ลบ
+  const delWrong = await req('DELETE', `/admin/menu/items/${newItemId}?brandId=not-a-brand`, { token: adminToken });
+  ok(delWrong.status === 403 || delWrong.status === 404, 'ลบเมนูข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${delWrong.status}`);
+  const del = await req('DELETE', `/admin/menu/items/${newItemId}?brandId=${brandId}`, { token: adminToken });
+  ok(is2xx(del.status) && del.body?.deleted === true, 'ลบเมนู (admin)');
+
   // 5) customer dev-login
   const cust = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-buyer' } });
   ok(is2xx(cust.status), 'customer dev-login', JSON.stringify(cust.body));

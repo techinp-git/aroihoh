@@ -39,6 +39,13 @@ export class MenuController {
   }
 
   @UseGuards(AdminJwtGuard)
+  @Get('admin/menu/categories')
+  listCategories(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    assertBrandAccess(admin, brandId);
+    return this.menu.listCategories(brandId);
+  }
+
+  @UseGuards(AdminJwtGuard)
   @Post('admin/menu/categories')
   createCategory(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateCategoryDto) {
     assertBrandAccess(admin, dto.brandId);

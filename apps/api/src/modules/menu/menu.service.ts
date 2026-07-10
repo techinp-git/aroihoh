@@ -33,6 +33,14 @@ export class MenuService {
     });
   }
 
+  /** Admin: หมวดเมนูทั้งหมดของแบรนด์ (ใช้จัดกลุ่ม + assign ตอนสร้าง/แก้ item) */
+  listCategories(brandId: string) {
+    return this.prisma.menuCategory.findMany({
+      where: { brandId },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
   createCategory(dto: CreateCategoryDto) {
     return this.prisma.menuCategory.create({
       data: { brandId: dto.brandId, name: dto.name, sortOrder: dto.sortOrder ?? 0 },

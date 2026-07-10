@@ -84,6 +84,9 @@ export interface MenuItem {
   id: string; name: string; description: string | null; price: number;
   imageUrl: string | null; isAvailable: boolean; categoryId: string | null;
 }
+export interface MenuCategory {
+  id: string; name: string; sortOrder: number; isActive: boolean;
+}
 export interface AdminUser {
   id: string; email: string; name: string; role: string; isActive: boolean; brandIds: string[];
 }
@@ -112,9 +115,39 @@ export const setItemAvailability = (brandId: string, id: string, isAvailable: bo
   );
 
 export const updateItemPrice = (brandId: string, id: string, price: number) =>
+  updateMenuItem(brandId, id, { price });
+
+export const listMenuCategories = (brandId: string) =>
+  adminFetch<MenuCategory[]>(`/admin/menu/categories?brandId=${encodeURIComponent(brandId)}`);
+
+export const createMenuCategory = (brandId: string, name: string, sortOrder?: number) =>
+  adminFetch<MenuCategory>('/admin/menu/categories', {
+    method: 'POST',
+    body: JSON.stringify({ brandId, name, sortOrder }),
+  });
+
+export interface MenuItemInput {
+  name?: string; description?: string | null; price?: number;
+  imageUrl?: string | null; categoryId?: string | null;
+}
+
+export const createMenuItem = (
+  brandId: string,
+  body: { name: string; price: number; description?: string; imageUrl?: string; categoryId?: string },
+) => adminFetch<MenuItem>('/admin/menu/items', {
+  method: 'POST',
+  body: JSON.stringify({ brandId, ...body }),
+});
+
+export const updateMenuItem = (brandId: string, id: string, body: MenuItemInput) =>
   adminFetch<MenuItem>(`/admin/menu/items/${id}?brandId=${encodeURIComponent(brandId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ price }),
+    body: JSON.stringify(body),
+  });
+
+export const deleteMenuItem = (brandId: string, id: string) =>
+  adminFetch<{ deleted: boolean }>(`/admin/menu/items/${id}?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'DELETE',
   });
 
 export const dailyReport = (brandId: string, date?: string) =>
