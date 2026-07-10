@@ -17,3 +17,61 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test --workspaces --if-present
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: aroihoh
+          POSTGRES_PASSWORD: aroihoh
+          POSTGRES_DB: aroihoh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aroihoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://aroihoh:aroihoh@localhost:5432/aroihoh?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: e2e-customer-secret
+      ADMIN_JWT_SECRET: e2e-admin-secret
+      ADMIN_SEED_EMAIL: owner@chimchiva.local
+      ADMIN_SEED_PASSWORD: owner1234
+      ALLOW_DEV_LOGIN: 'true'
+      PORT: '3000'
+      API_BASE: http://localhost:3000/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: migrate + seed
+        working-directory: apps/api
+        run: |
+          npx prisma migrate deploy
+          npm run prisma:seed
+      - name: boot api + run e2e
+        working-directory: apps/api
+        run: |
+          node dist/main.js &
+          API_PID=$!
+          npm run test:e2e
+          STATUS=$?
+          kill $API_PID 2>/dev/null || true
+          exit $STATUS

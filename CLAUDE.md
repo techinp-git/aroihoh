@@ -38,9 +38,12 @@ npm run dev:api             # NestJS watch mode (port 3000, prefix /api)
 npm run dev:liff            # Vite dev (port 5173)
 npm run dev:admin           # Vite dev (port 5174)
 npm test -w apps/api        # unit tests (jest) — โดเมน logic: geo/fee/pricing
+npm run test:e2e -w apps/api # E2E smoke (ยิง HTTP จริง — ต้องมี API รันที่ :3000 + DB seed แล้ว)
 npm run prisma:migrate -w apps/api   # apply migration (ต้องมี DB)
 npm run prisma:seed -w apps/api      # seed แบรนด์ชิมชีวา + เมนู + เขตส่งตัวอย่าง
 ```
+
+**CI** (`.github/workflows/ci.yml`): 2 งาน — `build` (npm ci + build + jest ทุก workspace) และ `e2e` (postgis+redis service → migrate deploy → seed → boot API → `test/e2e.mjs` 28 เช็ค). E2E ครอบกติกาเหล็ก: คิดเงิน server, เช็คเขต 422, idempotent, tenant isolation, RBAC (customer JWT เข้า admin ไม่ได้), status transition, พักร้าน→422. ไม่พึ่ง lib นอก (fetch ล้วน).
 
 ## ข้อห้าม / กติกาเหล็ก
 1. **ทุก query DB ต้องกรอง tenant key** (merchant_id/brand_id) ตั้งแต่ migration แรก — ห้ามมีตาราง business data ที่ไม่มี tenant key
