@@ -1,4 +1,5 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { OrdersService } from './orders.service';
 
 // mock deps แบบเบา ๆ เพื่อทดสอบ decision logic (idempotency / zone gating / server pricing)
@@ -7,14 +8,17 @@ function makeService(overrides: {
   quote?: any;
   menuItems?: any[];
   createdCapture?: (data: any) => void;
+  createImpl?: any;
 }) {
   const prisma: any = {
     order: {
-      findUnique: jest.fn().mockResolvedValue(overrides.existingOrder ?? null),
-      create: jest.fn().mockImplementation(({ data }: any) => {
-        overrides.createdCapture?.(data);
-        return Promise.resolve({ id: 'order-1', ...data });
-      }),
+      findFirst: jest.fn().mockResolvedValue(overrides.existingOrder ?? null),
+      create:
+        overrides.createImpl ??
+        jest.fn().mockImplementation(({ data }: any) => {
+          overrides.createdCapture?.(data);
+          return Promise.resolve({ id: 'order-1', ...data });
+        }),
     },
     menuItem: {
       findMany: jest.fn().mockResolvedValue(overrides.menuItems ?? []),
@@ -75,5 +79,20 @@ describe('OrdersService.create', () => {
   it('เมนูไม่อยู่ในแบรนด์/ปิดขาย → BadRequest', async () => {
     const { service } = makeService({ menuItems: [] });
     await expect(service.create(customer, baseDto)).rejects.toThrow();
+  });
+
+  it('idempotencyKey ชนกับออเดอร์ของคนอื่น (P2002 แต่ไม่ใช่ของเรา) → Conflict ไม่รั่วข้อมูล', async () => {
+    const p2002 = new Prisma.PrismaClientKnownRequestError('dup', {
+      code: 'P2002',
+      clientVersion: 'x',
+    });
+    const { service } = makeService({
+      menuItems: [{ id: 'm1', name: 'กะเพรา', price: 6000, isAvailable: true }],
+      // findFirst คืน null ทั้งครั้งแรกและตอน recovery (คีย์ไม่ใช่ของลูกค้ารายนี้)
+      createImpl: jest.fn().mockRejectedValue(p2002),
+    });
+    await expect(service.create(customer, baseDto)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });

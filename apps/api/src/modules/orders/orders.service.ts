@@ -31,9 +31,9 @@ export class OrdersService {
   async create(customer: { sub: string; brandId: string }, dto: CreateOrderDto) {
     const { brandId, sub: customerId } = customer;
 
-    // 1) idempotency: ถ้าเคยสร้างด้วย key นี้แล้ว คืนตัวเดิม
-    const existing = await this.prisma.order.findUnique({
-      where: { idempotencyKey: dto.idempotencyKey },
+    // 1) idempotency: คืนตัวเดิม "เฉพาะของลูกค้า+แบรนด์เดียวกัน" (กัน IDOR ข้ามคน/ข้ามแบรนด์)
+    const existing = await this.prisma.order.findFirst({
+      where: { idempotencyKey: dto.idempotencyKey, brandId, customerId },
       include: this.orderInclude,
     });
     if (existing) return existing;
@@ -109,13 +109,16 @@ export class OrdersService {
         include: this.orderInclude,
       });
     } catch (e) {
-      // สอง request ยิง key เดียวกันพร้อมกัน → unique violation → คืนตัวที่สร้างสำเร็จ
+      // unique violation ที่ idempotencyKey
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const winner = await this.prisma.order.findUnique({
-          where: { idempotencyKey: dto.idempotencyKey },
+        // คืนได้เฉพาะถ้าเป็นออเดอร์ของลูกค้า+แบรนด์เดียวกัน (race กดซ้ำ)
+        const mine = await this.prisma.order.findFirst({
+          where: { idempotencyKey: dto.idempotencyKey, brandId, customerId },
           include: this.orderInclude,
         });
-        if (winner) return winner;
+        if (mine) return mine;
+        // key ชนกับออเดอร์ของคนอื่น → ไม่รั่วข้อมูล, ให้ client สร้าง key ใหม่
+        throw new ConflictException('idempotencyKey ถูกใช้ไปแล้ว');
       }
       throw e;
     }
