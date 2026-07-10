@@ -92,7 +92,9 @@ model Kitchen {
   maxDistanceKm Float? // ใช้เมื่อ zoneType = radius (กลยุทธ์ Haversine)
   // ใช้เมื่อ zoneType = polygon (กลยุทธ์ PostGIS) — query ผ่าน raw SQL (ST_Contains)
   deliveryZone  Unsupported("geometry(Polygon, 4326)")?
-  isOpen        Boolean                                 @default(true)
+  isOpen        Boolean                                 @default(true) // US-16: ปุ่มพักรับออเดอร์ฉุกเฉิน
+  openTime      String? // US-16: เวลาเปิด "HH:MM" (null = เปิดตลอด)
+  closeTime     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

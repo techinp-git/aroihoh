@@ -134,6 +134,20 @@ export const setBrandCod = (brandId: string, enabled: boolean) =>
     { method: 'PATCH', body: JSON.stringify({ enabled }) },
   );
 
+export interface StoreState {
+  kitchenId: string; name: string; isOpen: boolean;
+  openTime: string | null; closeTime: string | null;
+  acceptingNow: boolean; reason: string | null;
+}
+export const getStore = (brandId: string) =>
+  adminFetch<StoreState>(`/admin/store?brandId=${encodeURIComponent(brandId)}`);
+export const setStorePause = (brandId: string, isOpen: boolean) =>
+  adminFetch<StoreState>(`/admin/store/pause?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ isOpen }) });
+export const setStoreHours = (brandId: string, openTime: string | null, closeTime: string | null) =>
+  adminFetch<StoreState>(`/admin/store/hours?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ openTime, closeTime }) });
+
 export interface CustomerRow {
   id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;
   tags: string[]; createdAt: string; orderCount: number; totalSpent: number; lastOrderAt: string | null;

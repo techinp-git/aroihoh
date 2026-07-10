@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { haversineKm, isWithinRadius } from './geo';
 import { computeDeliveryFee } from './fee';
+import { isAccepting, nowHHMMBangkok } from '../store/store-hours';
 import type { DeliveryCheckResult } from '@aroihoh/shared';
 
 export interface DeliveryQuote {
@@ -45,8 +46,13 @@ export class DeliveryService {
     const distanceKm = haversineKm(center, point);
     const maxKm = kitchen.maxDistanceKm ?? 0;
 
-    if (!kitchen.isOpen) {
-      return { kitchenId: kitchen.id, inZone: false, distanceKm, reason: 'ครัวปิดรับออเดอร์' };
+    // US-16: พักรับออเดอร์ / นอกเวลาทำการ
+    const acc = isAccepting(
+      { isOpen: kitchen.isOpen, openTime: kitchen.openTime, closeTime: kitchen.closeTime },
+      nowHHMMBangkok(),
+    );
+    if (!acc.ok) {
+      return { kitchenId: kitchen.id, inZone: false, distanceKm, reason: acc.reason };
     }
     if (!isWithinRadius(center, point, maxKm)) {
       return { kitchenId: kitchen.id, inZone: false, distanceKm, reason: 'เกินระยะจัดส่ง' };
