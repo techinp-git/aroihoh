@@ -32,7 +32,8 @@ function makeService(overrides: {
       overrides.quote ?? { kitchenId: 'k1', inZone: true, distanceKm: 1, deliveryFee: 2000 },
     ),
   };
-  return { service: new OrdersService(prisma, delivery), prisma, delivery };
+  const events: any = { emit: jest.fn() };
+  return { service: new OrdersService(prisma, delivery, events), prisma, delivery };
 }
 
 const customer = { sub: 'cust-1', brandId: 'brand-1' };

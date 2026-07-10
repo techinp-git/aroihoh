@@ -72,6 +72,15 @@ export default function App() {
     })();
   }, []);
 
+  // auto-refresh สถานะระหว่างติดตาม (US-11 ฝั่งลูกค้า)
+  useEffect(() => {
+    if (view !== 'track' || !order) return;
+    const id = setInterval(() => {
+      getOrder(order.id).then(setOrder).catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [view, order?.id]);
+
   const lines = Object.values(cart).filter((l) => l.qty > 0);
   const count = lines.reduce((a, l) => a + l.qty, 0);
   const subtotal = lines.reduce((a, l) => a + l.item.price * l.qty, 0);

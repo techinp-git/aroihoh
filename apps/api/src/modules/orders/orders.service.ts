@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { computeOrderPricing } from './pricing';
 import { canTransition } from './status';
+import { OrderEventsService } from './order-events.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly delivery: DeliveryService,
+    private readonly events: OrderEventsService,
   ) {}
 
   private readonly orderInclude = { items: true } satisfies Prisma.OrderInclude;
@@ -92,7 +94,7 @@ export class OrdersService {
 
     // 5) เขียน order + address + items แบบ atomic (nested create). กัน race ที่ idempotencyKey ด้วย unique
     try {
-      return await this.prisma.order.create({
+      const created = await this.prisma.order.create({
         data: {
           brand: { connect: { id: brandId } },
           kitchen: { connect: { id: quote.kitchenId } },
@@ -119,6 +121,14 @@ export class OrdersService {
         },
         include: this.orderInclude,
       });
+      // US-11: push realtime ให้ admin
+      this.events.emit({
+        brandId,
+        type: 'created',
+        orderId: created.id,
+        total: created.total,
+      });
+      return created;
     } catch (e) {
       // unique violation ที่ idempotencyKey
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -179,8 +189,8 @@ export class OrdersService {
       throw new BadRequestException('การยกเลิกต้องระบุเหตุผล');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
         where: { id: orderId },
         data: { status: to, ...(to === 'cancelled' ? { cancelReason: reason } : {}) },
         include: this.orderInclude,
@@ -197,7 +207,10 @@ export class OrdersService {
           after: { status: to, cancelReason: reason ?? null },
         },
       });
-      return updated;
+      return u;
     });
+    // US-11: sync ให้ admin คนอื่นเห็นการเปลี่ยนสถานะ
+    this.events.emit({ brandId, type: 'status', orderId, status: to });
+    return updated;
   }
 }

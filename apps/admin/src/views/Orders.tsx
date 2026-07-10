@@ -7,8 +7,30 @@ import {
   STATUS_TH,
   ALL_STATUSES,
   nextStatus,
+  API_BASE,
+  getAdminToken,
   type Order,
 } from '../api';
+
+// เสียงเตือนสั้น ๆ ผ่าน Web Audio (ไม่ต้องมีไฟล์เสียง)
+function beep() {
+  try {
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.type = 'sine';
+    o.frequency.value = 880;
+    g.gain.value = 0.08;
+    o.start();
+    o.stop(ctx.currentTime + 0.18);
+    o.onended = () => ctx.close();
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function Orders({ brandId }: { brandId: string }) {
   const [filter, setFilter] = useState('');
@@ -16,6 +38,8 @@ export default function Orders({ brandId }: { brandId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
+  const [flash, setFlash] = useState(false);
 
   const load = useCallback(async () => {
     if (!brandId) return;
@@ -33,6 +57,30 @@ export default function Orders({ brandId }: { brandId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // US-11: realtime — ออเดอร์ใหม่เด้ง + เสียงเตือน (SSE, EventSource reconnect เอง)
+  useEffect(() => {
+    if (!brandId) return;
+    const es = new EventSource(
+      `${API_BASE}/admin/orders/stream?brandId=${brandId}&token=${encodeURIComponent(getAdminToken())}`,
+    );
+    es.onopen = () => setLive(true);
+    es.onerror = () => setLive(false);
+    es.onmessage = (ev) => {
+      try {
+        const e = JSON.parse(ev.data);
+        if (e.type === 'created') {
+          beep();
+          setFlash(true);
+          setTimeout(() => setFlash(false), 4000);
+        }
+      } catch {
+        /* ignore */
+      }
+      load();
+    };
+    return () => es.close();
+  }, [brandId, load]);
 
   const act = async (o: Order, run: () => Promise<unknown>) => {
     setBusy(o.id);
@@ -58,6 +106,11 @@ export default function Orders({ brandId }: { brandId: string }) {
   return (
     <>
       {error && <div className="alert error">{error}</div>}
+      {flash && (
+        <div className="alert" style={{ background: 'var(--st-completed-bg)', color: 'var(--st-completed)', border: '1px solid #bbf7d0' }}>
+          🔔 มีออเดอร์ใหม่เข้ามา!
+        </div>
+      )}
 
       <div className="section-head">
         <div className="tabs">
@@ -67,9 +120,14 @@ export default function Orders({ brandId }: { brandId: string }) {
             </button>
           ))}
         </div>
-        <button className="btn ghost sm" onClick={load} disabled={loading}>
-          {loading ? <span className="spinner" /> : '↻'} รีเฟรช
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, color: live ? 'var(--st-completed)' : 'var(--text-faint)', fontWeight: 600 }}>
+            {live ? '🟢 realtime' : '⚪ offline'}
+          </span>
+          <button className="btn ghost sm" onClick={load} disabled={loading}>
+            {loading ? <span className="spinner" /> : '↻'} รีเฟรช
+          </button>
+        </div>
       </div>
 
       <div className="card">
