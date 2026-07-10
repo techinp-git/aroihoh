@@ -11,15 +11,17 @@ import {
 import Dashboard from './views/Dashboard';
 import Orders from './views/Orders';
 import Menu from './views/Menu';
+import Customers from './views/Customers';
 import Users from './views/Users';
 import Settings from './views/Settings';
 
-type View = 'dashboard' | 'orders' | 'menu' | 'users' | 'settings';
+type View = 'dashboard' | 'orders' | 'menu' | 'customers' | 'users' | 'settings';
 
 const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean }[] = [
   { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠' },
   { key: 'orders', label: 'ออเดอร์', ic: '🧾' },
   { key: 'menu', label: 'เมนู', ic: '🍜' },
+  { key: 'customers', label: 'ลูกค้า', ic: '👤' },
   { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', ownerOnly: true },
   { key: 'settings', label: 'ตั้งค่า', ic: '⚙️' },
 ];
@@ -28,6 +30,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   dashboard: { title: 'แดชบอร์ด', sub: 'ภาพรวมออเดอร์และยอดขาย' },
   orders: { title: 'จัดการออเดอร์', sub: 'ไล่สถานะ / ยกเลิก (EP-04)' },
   menu: { title: 'จัดการเมนู', sub: 'เปิด-ปิดขาย / แก้ราคา (US-14)' },
+  customers: { title: 'ลูกค้า', sub: 'รายชื่อ + ประวัติออเดอร์ + ยอดใช้จ่าย' },
   users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
   settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },
 };
@@ -167,6 +170,7 @@ export default function App() {
           {view === 'dashboard' && <Dashboard brandId={brandId} />}
           {view === 'orders' && <Orders brandId={brandId} />}
           {view === 'menu' && <Menu brandId={brandId} />}
+          {view === 'customers' && <Customers brandId={brandId} />}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}
           {view === 'settings' && (
             <Settings

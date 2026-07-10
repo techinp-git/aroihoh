@@ -11,6 +11,7 @@ import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { CustomersModule } from './modules/customers/customers.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     AdminUsersModule,
     ReportsModule,
     PaymentsModule,
+    CustomersModule,
   ],
 })
 export class AppModule {}

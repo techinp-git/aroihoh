@@ -134,6 +134,23 @@ export const setBrandCod = (brandId: string, enabled: boolean) =>
     { method: 'PATCH', body: JSON.stringify({ enabled }) },
   );
 
+export interface CustomerRow {
+  id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;
+  createdAt: string; orderCount: number; totalSpent: number; lastOrderAt: string | null;
+}
+export interface CustomerDetail extends CustomerRow {
+  addresses: { id: string; label: string | null; detail: string; lat: number; lng: number }[];
+  orders: Order[];
+}
+
+export const listCustomers = (brandId: string, q?: string) =>
+  adminFetch<CustomerRow[]>(
+    `/admin/customers?brandId=${encodeURIComponent(brandId)}` + (q ? `&q=${encodeURIComponent(q)}` : ''),
+  );
+
+export const getCustomer = (brandId: string, id: string) =>
+  adminFetch<CustomerDetail>(`/admin/customers/${id}?brandId=${encodeURIComponent(brandId)}`);
+
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {
   email: string; password: string; name: string; role: string; brandIds?: string[];
