@@ -3,9 +3,15 @@ import {
   listConversations,
   getThread,
   sendChat,
+  getCustomer,
+  updateCustomerTags,
+  baht,
+  STATUS_TH,
   type ChatConversation,
   type ChatThread,
+  type CustomerDetail,
 } from '../api';
+import { TagEditor } from '../components/Tags';
 
 const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
@@ -14,6 +20,7 @@ export default function Chat({ brandId }: { brandId: string }) {
   const [convs, setConvs] = useState<ChatConversation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [thread, setThread] = useState<ChatThread | null>(null);
+  const [cust, setCust] = useState<CustomerDetail | null>(null);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
@@ -37,8 +44,13 @@ export default function Chat({ brandId }: { brandId: string }) {
     async (customerId: string) => {
       setSelected(customerId);
       try {
-        setThread(await getThread(brandId, customerId));
-        loadConvs(); // อ่านแล้ว → เคลียร์ unread
+        const [t, c] = await Promise.all([
+          getThread(brandId, customerId),
+          getCustomer(brandId, customerId),
+        ]);
+        setThread(t);
+        setCust(c);
+        loadConvs();
       } catch (e) {
         setError((e as Error).message);
       }
@@ -64,6 +76,16 @@ export default function Chat({ brandId }: { brandId: string }) {
       setError((e as Error).message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const saveTags = async (tags: string[]) => {
+    if (!cust) return;
+    try {
+      await updateCustomerTags(brandId, cust.id, tags);
+      setCust({ ...cust, tags });
+    } catch (e) {
+      setError((e as Error).message);
     }
   };
 
@@ -129,6 +151,32 @@ export default function Chat({ brandId }: { brandId: string }) {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        {/* customer context panel */}
+        <div className="card chat-side">
+          {cust ? (
+            <>
+              <h3>แท็กลูกค้า</h3>
+              <TagEditor tags={cust.tags} onChange={saveTags} />
+
+              <h3 style={{ marginTop: 18 }}>สรุป</h3>
+              <div className="mini-order"><span>ออเดอร์</span><b>{cust.orderCount}</b></div>
+              <div className="mini-order"><span>ยอดใช้จ่าย</span><b>{baht(cust.totalSpent)}</b></div>
+
+              <h3 style={{ marginTop: 18 }}>ประวัติออเดอร์</h3>
+              {cust.orders.length === 0 && <div className="pay">— ยังไม่มี —</div>}
+              {cust.orders.slice(0, 8).map((o) => (
+                <div key={o.id} className="mini-order">
+                  <span className="oid">#{o.id.slice(0, 6)}</span>
+                  <span>{baht(o.total)}</span>
+                  <span className={`pill ${o.status}`} style={{ fontSize: 10 }}>{STATUS_TH[o.status] || o.status}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="pay">เลือกบทสนทนาเพื่อดูข้อมูลลูกค้า</div>
           )}
         </div>
       </div>

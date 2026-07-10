@@ -136,7 +136,7 @@ export const setBrandCod = (brandId: string, enabled: boolean) =>
 
 export interface CustomerRow {
   id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;
-  createdAt: string; orderCount: number; totalSpent: number; lastOrderAt: string | null;
+  tags: string[]; createdAt: string; orderCount: number; totalSpent: number; lastOrderAt: string | null;
 }
 export interface CustomerDetail extends CustomerRow {
   addresses: { id: string; label: string | null; detail: string; lat: number; lng: number }[];
@@ -150,6 +150,12 @@ export const listCustomers = (brandId: string, q?: string) =>
 
 export const getCustomer = (brandId: string, id: string) =>
   adminFetch<CustomerDetail>(`/admin/customers/${id}?brandId=${encodeURIComponent(brandId)}`);
+
+export const updateCustomerTags = (brandId: string, id: string, tags: string[]) =>
+  adminFetch<{ id: string; tags: string[] }>(
+    `/admin/customers/${id}/tags?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ tags }) },
+  );
 
 export interface ChatConversation {
   customerId: string; displayName: string | null; lastMessage: string;

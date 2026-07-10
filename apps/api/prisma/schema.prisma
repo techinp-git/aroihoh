@@ -149,6 +149,7 @@ model Customer {
   displayName String?
   pictureUrl  String?
   phoneEnc    String? // เข้ารหัส — ห้าม log
+  tags        String[] @default([]) // US-21: แท็กลูกค้า (VIP, ประจำ, ฯลฯ)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

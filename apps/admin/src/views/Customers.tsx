@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   listCustomers,
   getCustomer,
+  updateCustomerTags,
   baht,
   STATUS_TH,
   type CustomerRow,
   type CustomerDetail,
 } from '../api';
+import { TagEditor } from '../components/Tags';
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
@@ -48,6 +50,16 @@ export default function Customers({ brandId }: { brandId: string }) {
     }
   };
 
+  const saveTags = async (tags: string[]) => {
+    if (!detail) return;
+    try {
+      await updateCustomerTags(brandId, detail.id, tags);
+      setDetail({ ...detail, tags });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   if (detail) {
     return (
       <>
@@ -61,6 +73,10 @@ export default function Customers({ brandId }: { brandId: string }) {
               <div style={{ fontWeight: 700, fontSize: 16 }}>{detail.displayName || '(ไม่มีชื่อ)'}</div>
               <div className="pay">LINE: {detail.lineUserId}</div>
             </div>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <div className="stat-label" style={{ marginBottom: 6 }}>แท็ก</div>
+            <TagEditor tags={detail.tags} onChange={saveTags} />
           </div>
           <div className="stats" style={{ marginTop: 18, gridTemplateColumns: 'repeat(3,1fr)' }}>
             <div className="stat"><div className="stat-label">ออเดอร์ทั้งหมด</div><div className="stat-value">{detail.orderCount}</div></div>
