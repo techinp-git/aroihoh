@@ -183,7 +183,8 @@ export const setStoreHours = (brandId: string, openTime: string | null, closeTim
 
 export interface CustomerRow {
   id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;
-  tags: string[]; createdAt: string; orderCount: number; totalSpent: number; lastOrderAt: string | null;
+  tags: string[]; marketingOptedOut?: boolean; createdAt: string;
+  orderCount: number; totalSpent: number; lastOrderAt: string | null;
 }
 export interface CustomerDetail extends CustomerRow {
   addresses: { id: string; label: string | null; detail: string; lat: number; lng: number }[];
@@ -225,6 +226,33 @@ export const sendChat = (brandId: string, customerId: string, text: string) =>
     method: 'POST',
     body: JSON.stringify({ text }),
   });
+
+// ── Broadcast (US-31) ──
+export interface Broadcast {
+  id: string; message: string; segment: { tags?: string[] } | null;
+  status: string; audienceCount: number; sentCount: number; failedCount: number;
+  createdBy: string | null; createdAt: string;
+}
+export interface BroadcastPreview { totalCustomers: number; optedOut: number; audienceCount: number; }
+
+export const previewBroadcast = (brandId: string, segment?: { tags?: string[] }) =>
+  adminFetch<BroadcastPreview>(`/admin/broadcasts/preview?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ segment }),
+  });
+export const createBroadcast = (brandId: string, message: string, segment?: { tags?: string[] }) =>
+  adminFetch<Broadcast>(`/admin/broadcasts?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ message, segment }),
+  });
+export const listBroadcasts = (brandId: string) =>
+  adminFetch<Broadcast[]>(`/admin/broadcasts?brandId=${encodeURIComponent(brandId)}`);
+
+export const setCustomerOptOut = (brandId: string, id: string, optedOut: boolean) =>
+  adminFetch<{ id: string; marketingOptedOut: boolean }>(
+    `/admin/customers/${id}/opt-out?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ optedOut }) },
+  );
 
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {

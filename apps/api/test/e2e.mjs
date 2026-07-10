@@ -226,6 +226,30 @@ async function main() {
   });
   ok(resume.status === 200 && resume.body?.isOpen === true, 'เปิดร้านคืน');
 
+  // 16) US-31 LINE broadcast + PDPA opt-out
+  const prev0 = await req('POST', `/admin/broadcasts/preview?brandId=${brandId}`, { token: adminToken, body: {} });
+  ok(is2xx(prev0.status) && typeof prev0.body?.audienceCount === 'number', 'broadcast preview (reach)', JSON.stringify(prev0.body));
+  const baseAudience = prev0.body.audienceCount;
+  // opt-out ลูกค้า e2e-buyer แล้ว reach ต้องลดลง — หา customerId จาก admin list
+  const custList = await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken });
+  const buyer = (custList.body || []).find((c) => c.lineUserId === 'Udev-e2e-buyer');
+  ok(!!buyer, 'พบลูกค้า e2e-buyer ในระบบ');
+  const optOut = await req('PATCH', `/admin/customers/${buyer.id}/opt-out?brandId=${brandId}`, { token: adminToken, body: { optedOut: true } });
+  ok(optOut.status === 200 && optOut.body?.marketingOptedOut === true, 'ตั้ง opt-out ลูกค้า (PDPA)');
+  const prev1 = await req('POST', `/admin/broadcasts/preview?brandId=${brandId}`, { token: adminToken, body: {} });
+  ok(prev1.body?.audienceCount === baseAudience - 1 && prev1.body?.optedOut >= 1, 'opt-out ลด reach ลง 1 (กันส่งถึงคน opt-out)', `${baseAudience}→${prev1.body?.audienceCount}`);
+  // สร้าง broadcast → queued + จอง message_logs
+  const bc = await req('POST', `/admin/broadcasts?brandId=${brandId}`, { token: adminToken, body: { message: 'E2E promo 🔥' } });
+  ok(is2xx(bc.status) && bc.body?.status === 'queued', 'สร้าง broadcast → queued', JSON.stringify(bc.body));
+  ok(bc.body?.audienceCount === prev1.body.audienceCount, 'audienceCount ตรงกับ preview (หัก opt-out แล้ว)');
+  const bcDetail = await req('GET', `/admin/broadcasts/${bc.body.id}?brandId=${brandId}`, { token: adminToken });
+  ok(bcDetail.body?.byStatus?.queued === bc.body.audienceCount, 'message_logs queued = จำนวนผู้รับ (กันส่งซ้ำ)');
+  // customer JWT เข้า broadcast ไม่ได้
+  const custBcast = await req('POST', `/admin/broadcasts?brandId=${brandId}`, { token: custToken, body: { message: 'x' } });
+  ok(custBcast.status === 401 || custBcast.status === 403, 'customer JWT ยิง broadcast → 401/403', `ได้ ${custBcast.status}`);
+  // คืน opt-out
+  await req('PATCH', `/admin/customers/${buyer.id}/opt-out?brandId=${brandId}`, { token: adminToken, body: { optedOut: false } });
+
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);
   if (fail > 0) {

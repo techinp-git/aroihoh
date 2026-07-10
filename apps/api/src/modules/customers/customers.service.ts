@@ -22,6 +22,7 @@ export class CustomersService {
       pictureUrl: c.pictureUrl,
       lineUserId: c.lineUserId,
       tags: c.tags,
+      marketingOptedOut: c.marketingOptedOut,
       createdAt: c.createdAt,
       ...computeCustomerStats(c.orders),
     }));
@@ -46,11 +47,23 @@ export class CustomersService {
       pictureUrl: c.pictureUrl,
       lineUserId: c.lineUserId,
       tags: c.tags,
+      marketingOptedOut: c.marketingOptedOut,
       createdAt: c.createdAt,
       addresses: c.addresses,
       orders: c.orders,
       ...computeCustomerStats(c.orders),
     };
+  }
+
+  // PDPA: ตั้งค่า opt-out รับข่าวสาร (แอดมินบันทึกตามคำขอลูกค้า) — broadcast จะข้ามคนนี้เสมอ
+  async setOptOut(brandId: string, customerId: string, optedOut: boolean) {
+    const c = await this.prisma.customer.findFirst({ where: { id: customerId, brandId } });
+    if (!c) throw new NotFoundException('ไม่พบลูกค้า');
+    return this.prisma.customer.update({
+      where: { id: customerId },
+      data: { marketingOptedOut: optedOut },
+      select: { id: true, marketingOptedOut: true },
+    });
   }
 
   // US-21: ตั้งแท็กลูกค้า (แทนที่ชุดเดิม)

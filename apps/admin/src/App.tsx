@@ -13,15 +13,17 @@ import Orders from './views/Orders';
 import Menu from './views/Menu';
 import Customers from './views/Customers';
 import Chat from './views/Chat';
+import Broadcast from './views/Broadcast';
 import Users from './views/Users';
 import Settings from './views/Settings';
 
-type View = 'dashboard' | 'orders' | 'menu' | 'chat' | 'customers' | 'users' | 'settings';
+type View = 'dashboard' | 'orders' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'users' | 'settings';
 
-const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean }[] = [
+const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean; notStaff?: boolean }[] = [
   { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠' },
   { key: 'orders', label: 'ออเดอร์', ic: '🧾' },
   { key: 'chat', label: 'แชต', ic: '💬' },
+  { key: 'broadcast', label: 'ส่งข่าวสาร', ic: '📣', notStaff: true },
   { key: 'menu', label: 'เมนู', ic: '🍜' },
   { key: 'customers', label: 'ลูกค้า', ic: '👤' },
   { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', ownerOnly: true },
@@ -33,6 +35,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   orders: { title: 'จัดการออเดอร์', sub: 'ไล่สถานะ / ยกเลิก (EP-04)' },
   menu: { title: 'จัดการเมนู', sub: 'เพิ่ม/แก้ไข/ลบเมนู · หมวด · เปิด-ปิดขาย · ราคา (US-14)' },
   chat: { title: 'แชต', sub: 'ตอบลูกค้า (US-21) — ส่งเข้า LINE เมื่อเชื่อม SETUP-1' },
+  broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-31)' },
   customers: { title: 'ลูกค้า', sub: 'รายชื่อ + ประวัติออเดอร์ + ยอดใช้จ่าย' },
   users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
   settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },
@@ -118,7 +121,11 @@ export default function App() {
     return <Login onSuccess={setProfile} />;
   }
 
-  const nav = NAV.filter((n) => !n.ownerOnly || profile.role === 'owner');
+  const nav = NAV.filter(
+    (n) =>
+      (!n.ownerOnly || profile.role === 'owner') &&
+      (!n.notStaff || profile.role !== 'staff'),
+  );
   const t = TITLES[view];
 
   return (
@@ -174,6 +181,7 @@ export default function App() {
           {view === 'orders' && <Orders brandId={brandId} />}
           {view === 'menu' && <Menu brandId={brandId} />}
           {view === 'chat' && <Chat brandId={brandId} />}
+          {view === 'broadcast' && <Broadcast brandId={brandId} />}
           {view === 'customers' && <Customers brandId={brandId} />}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}
           {view === 'settings' && (

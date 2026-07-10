@@ -1,9 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { IsBoolean } from 'class-validator';
 import { CustomersService } from './customers.service';
 import { SetTagsDto } from './dto/set-tags.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
+
+class SetOptOutDto {
+  @IsBoolean() optedOut: boolean;
+}
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/customers')
@@ -39,5 +44,17 @@ export class CustomersController {
   ) {
     assertBrandAccess(admin, brandId);
     return this.customers.setTags(brandId, id, dto.tags);
+  }
+
+  // PDPA: บันทึก opt-out/opt-in รับข่าวสาร
+  @Patch(':id/opt-out')
+  setOptOut(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Param('id') id: string,
+    @Body() dto: SetOptOutDto,
+  ) {
+    assertBrandAccess(admin, brandId);
+    return this.customers.setOptOut(brandId, id, dto.optedOut);
   }
 }

@@ -71,6 +71,7 @@ model Brand {
   adminBrands   AdminBrand[]
   auditLogs     AuditLog[]
   chatMessages  ChatMessage[]
+  broadcasts    Broadcast[]
 
   @@unique([merchantId, slug])
   @@index([merchantId])
@@ -152,6 +153,7 @@ model Customer {
   pictureUrl  String?
   phoneEnc    String? // เข้ารหัส — ห้าม log
   tags        String[] @default([]) // US-21: แท็กลูกค้า (VIP, ประจำ, ฯลฯ)
+  marketingOptedOut Boolean @default(false) // PDPA: opt-out รับข่าวสาร/broadcast — ต้องเคารพเสมอ
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -371,6 +373,34 @@ model MessageLog {
 
   @@index([brandId])
   @@map("message_logs")
+}
+
+// US-31 LINE broadcast: แคมเปญส่งข่าวสารถึงลูกค้าหลายคน (เคารพ opt-out PDPA + คุมโควตา)
+enum BroadcastStatus {
+  draft
+  queued
+  sending
+  sent
+  failed
+}
+
+model Broadcast {
+  id            String          @id @default(uuid())
+  brandId       String
+  message       String // ข้อความ (text; flex ภายหลัง)
+  segment       Json? // เกณฑ์กลุ่มเป้าหมาย { tags?: string[] } — null = ทั้งหมด (ที่ไม่ opt-out)
+  status        BroadcastStatus @default(draft)
+  audienceCount Int             @default(0) // ผู้รับที่ resolve ได้ (หลังหัก opt-out)
+  sentCount     Int             @default(0)
+  failedCount   Int             @default(0)
+  createdBy     String? // adminId ผู้สั่งส่ง
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id])
+
+  @@index([brandId, createdAt])
+  @@map("broadcasts")
 }
 
 // ─────────────────────────── Admin / audit ───────────────────────────
