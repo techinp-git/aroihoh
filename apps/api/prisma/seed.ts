@@ -101,6 +101,24 @@ async function main() {
     },
   });
 
+  // ลูกค้าตัวอย่าง + แชต (US-21 demo)
+  const sampleCust = await prisma.customer.upsert({
+    where: { brandId_lineUserId: { brandId: brand.id, lineUserId: 'Usample-chat' } },
+    update: {},
+    create: { brandId: brand.id, lineUserId: 'Usample-chat', displayName: 'คุณสมชาย (ตัวอย่าง)' },
+  });
+  const hasChat = await prisma.chatMessage.findFirst({ where: { customerId: sampleCust.id } });
+  if (!hasChat) {
+    const base = Date.now();
+    await prisma.chatMessage.createMany({
+      data: [
+        { brandId: brand.id, customerId: sampleCust.id, direction: 'inbound', text: 'สวัสดีครับ ร้านเปิดกี่โมง', isRead: true, createdAt: new Date(base) },
+        { brandId: brand.id, customerId: sampleCust.id, direction: 'outbound', text: 'เปิด 10:00–21:00 ครับ 🙏', isRead: true, createdAt: new Date(base + 1000) },
+        { brandId: brand.id, customerId: sampleCust.id, direction: 'inbound', text: 'มีเมนูเจไหมครับ', isRead: false, createdAt: new Date(base + 2000) },
+      ],
+    });
+  }
+
   console.log('seed done:', {
     merchantId: merchant.id,
     brandId: brand.id,

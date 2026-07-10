@@ -151,6 +151,28 @@ export const listCustomers = (brandId: string, q?: string) =>
 export const getCustomer = (brandId: string, id: string) =>
   adminFetch<CustomerDetail>(`/admin/customers/${id}?brandId=${encodeURIComponent(brandId)}`);
 
+export interface ChatConversation {
+  customerId: string; displayName: string | null; lastMessage: string;
+  lastAt: string | null; lastDirection: string | null; unread: number;
+}
+export interface ChatMsg {
+  id: string; direction: 'inbound' | 'outbound'; text: string; adminId: string | null; createdAt: string;
+}
+export interface ChatThread {
+  customer: { id: string; displayName: string | null; lineUserId: string };
+  messages: ChatMsg[];
+}
+
+export const listConversations = (brandId: string) =>
+  adminFetch<ChatConversation[]>(`/admin/chat/conversations?brandId=${encodeURIComponent(brandId)}`);
+export const getThread = (brandId: string, customerId: string) =>
+  adminFetch<ChatThread>(`/admin/chat/${customerId}?brandId=${encodeURIComponent(brandId)}`);
+export const sendChat = (brandId: string, customerId: string, text: string) =>
+  adminFetch<ChatMsg>(`/admin/chat/${customerId}?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {
   email: string; password: string; name: string; role: string; brandIds?: string[];

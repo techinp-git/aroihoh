@@ -70,6 +70,7 @@ model Brand {
   messageLogs   MessageLog[]
   adminBrands   AdminBrand[]
   auditLogs     AuditLog[]
+  chatMessages  ChatMessage[]
 
   @@unique([merchantId, slug])
   @@index([merchantId])
@@ -151,13 +152,37 @@ model Customer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brand     Brand     @relation(fields: [brandId], references: [id])
-  addresses Address[]
-  orders    Order[]
+  brand        Brand         @relation(fields: [brandId], references: [id])
+  addresses    Address[]
+  orders       Order[]
+  chatMessages ChatMessage[]
 
   @@unique([brandId, lineUserId])
   @@index([brandId])
   @@map("customers")
+}
+
+// US-21 Chat Center: แชตแอดมิน↔ลูกค้า (inbound มาจาก LINE webhook, outbound ยิงกลับผ่าน LINE)
+enum ChatDirection {
+  inbound
+  outbound
+}
+
+model ChatMessage {
+  id         String        @id @default(uuid())
+  brandId    String
+  customerId String
+  direction  ChatDirection
+  text       String
+  adminId    String? // ผู้ส่ง (เฉพาะ outbound)
+  isRead     Boolean       @default(false) // inbound ที่แอดมินยังไม่อ่าน
+  createdAt  DateTime      @default(now())
+
+  brand    Brand    @relation(fields: [brandId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([brandId, customerId, createdAt])
+  @@map("chat_messages")
 }
 
 model Address {

@@ -12,6 +12,7 @@ import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { CustomersModule } from './modules/customers/customers.module';
     ReportsModule,
     PaymentsModule,
     CustomersModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
