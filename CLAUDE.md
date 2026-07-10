@@ -11,7 +11,7 @@
 | path | คือ | stack |
 |---|---|---|
 | `apps/api` | Backend API + LINE webhook | NestJS 11, Prisma, PostgreSQL+PostGIS, Redis/BullMQ |
-| `apps/liff` | หน้าเว็บลูกค้าใน LINE (สั่งอาหาร) | React 18 + Vite + @line/liff |
+| `apps/liff` | หน้าเว็บลูกค้าใน LINE (สั่งอาหาร) — เมนู→ตะกร้า→เช็คเขต→สั่ง COD→ติดตามสถานะ (US-02/03/05 done); auth: dev-login (dev) / liff→/auth/line (รอ SETUP-1) | React 18 + Vite + @line/liff |
 | `apps/admin` | หลังบ้านร้าน (ออเดอร์/เมนู/รายงาน) | React 18 + Vite |
 | `packages/shared` | types/constants ใช้ร่วม | TypeScript |
 
