@@ -35,7 +35,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   orders: { title: 'จัดการออเดอร์', sub: 'ไล่สถานะ / ยกเลิก (EP-04)' },
   menu: { title: 'จัดการเมนู', sub: 'เพิ่ม/แก้ไข/ลบเมนู · หมวด · เปิด-ปิดขาย · ราคา (US-14)' },
   chat: { title: 'แชต', sub: 'ตอบลูกค้า (US-21) — ส่งเข้า LINE เมื่อเชื่อม SETUP-1' },
-  broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-31)' },
+  broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-18)' },
   customers: { title: 'ลูกค้า', sub: 'รายชื่อ + ประวัติออเดอร์ + ยอดใช้จ่าย' },
   users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
   settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },

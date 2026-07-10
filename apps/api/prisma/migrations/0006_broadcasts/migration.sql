@@ -1,4 +1,4 @@
--- US-31: LINE broadcast + PDPA opt-out
+-- US-18: LINE broadcast + PDPA opt-out
 
 -- PDPA: ลูกค้า opt-out รับข่าวสาร/broadcast
 ALTER TABLE "customers" ADD COLUMN "marketingOptedOut" BOOLEAN NOT NULL DEFAULT false;

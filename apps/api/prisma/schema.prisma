@@ -375,7 +375,7 @@ model MessageLog {
   @@map("message_logs")
 }
 
-// US-31 LINE broadcast: แคมเปญส่งข่าวสารถึงลูกค้าหลายคน (เคารพ opt-out PDPA + คุมโควตา)
+// US-18 LINE broadcast: แคมเปญส่งข่าวสารถึงลูกค้าหลายคน (เคารพ opt-out PDPA + คุมโควตา)
 enum BroadcastStatus {
   draft
   queued

@@ -227,7 +227,7 @@ export const sendChat = (brandId: string, customerId: string, text: string) =>
     body: JSON.stringify({ text }),
   });
 
-// ── Broadcast (US-31) ──
+// ── Broadcast (US-18) ──
 export interface Broadcast {
   id: string; message: string; segment: { tags?: string[] } | null;
   status: string; audienceCount: number; sentCount: number; failedCount: number;
