@@ -1,0 +1,22 @@
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ReportsService } from './reports.service';
+import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
+import { assertBrandAccess } from '../../common/admin-scope';
+
+@UseGuards(AdminJwtGuard)
+@Controller('admin/reports')
+export class ReportsController {
+  constructor(private readonly reports: ReportsService) {}
+
+  // GET /api/admin/reports/daily?brandId=&date=YYYY-MM-DD (date optional = วันนี้)
+  @Get('daily')
+  daily(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Query('date') date?: string,
+  ) {
+    assertBrandAccess(admin, brandId);
+    return this.reports.dailySummary(brandId, date);
+  }
+}

@@ -23,6 +23,9 @@ function makeService(overrides: {
     menuItem: {
       findMany: jest.fn().mockResolvedValue(overrides.menuItems ?? []),
     },
+    brand: {
+      findUnique: jest.fn().mockResolvedValue({ codEnabled: true }),
+    },
   };
   const delivery: any = {
     quote: jest.fn().mockResolvedValue(

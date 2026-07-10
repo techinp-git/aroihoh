@@ -38,6 +38,17 @@ export class OrdersService {
     });
     if (existing) return existing;
 
+    // US-07: ถ้าจ่าย COD แบรนด์ต้องเปิดรับ
+    if (dto.paymentMethod === 'cod') {
+      const brand = await this.prisma.brand.findUnique({
+        where: { id: brandId },
+        select: { codEnabled: true },
+      });
+      if (!brand?.codEnabled) {
+        throw new BadRequestException('แบรนด์นี้ปิดรับเก็บเงินปลายทาง (COD)');
+      }
+    }
+
     // 2) server-side re-check เขต + ค่าส่ง (กติกาเหล็ก #5)
     const quote = await this.delivery.quote(brandId, {
       lat: dto.deliveryAddress.lat,

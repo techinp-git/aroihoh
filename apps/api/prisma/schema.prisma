@@ -48,6 +48,7 @@ model Brand {
   logoUrl    String?
   theme      Json?
   isActive   Boolean @default(true)
+  codEnabled Boolean @default(true) // US-07: เปิด/ปิดรับเก็บเงินปลายทาง
 
   // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
   lineChannelId        String?
