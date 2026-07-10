@@ -7,6 +7,11 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { verifyLineIdToken } from './line-verify';
 
+interface AuthResult {
+  accessToken: string;
+  customer: { id: string; displayName: string | null; pictureUrl: string | null };
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -55,6 +60,33 @@ export class AuthService {
       lineUserId: payload.sub,
     });
 
+    return {
+      accessToken,
+      customer: {
+        id: customer.id,
+        displayName: customer.displayName,
+        pictureUrl: customer.pictureUrl,
+      },
+    };
+  }
+
+  // dev-only: ล็อกอินโดยไม่ผ่าน LINE (สำหรับทดสอบ LIFF ระหว่างยังไม่มี SETUP-1)
+  // controller จะกันด้วย ALLOW_DEV_LOGIN — ห้ามเปิดใน production
+  async devLogin(brandId: string, name?: string): Promise<AuthResult> {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
+    if (!brand) throw new NotFoundException('brand not found');
+
+    const lineUserId = 'Udev-' + (name?.trim() || 'guest').replace(/\s+/g, '-').toLowerCase();
+    const customer = await this.prisma.customer.upsert({
+      where: { brandId_lineUserId: { brandId, lineUserId } },
+      create: { brandId, lineUserId, displayName: name?.trim() || 'ลูกค้าทดสอบ' },
+      update: {},
+    });
+    const accessToken = await this.jwt.signAsync({
+      sub: customer.id,
+      brandId,
+      lineUserId,
+    });
     return {
       accessToken,
       customer: {
