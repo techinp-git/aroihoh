@@ -103,6 +103,37 @@ export default function Orders({ brandId }: { brandId: string }) {
   };
   const receivePayment = (o: Order) => act(o, () => markPaid(brandId, o.id));
 
+  // export CSV ของรายการที่กรองอยู่ (client-side — ยอดคิดจาก server อยู่แล้ว)
+  const exportCsv = () => {
+    const b = (satang: number) => (satang / 100).toFixed(2);
+    const esc = (v: unknown) => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ['เวลา', 'ออเดอร์', 'สถานะ', 'ช่องทาง', 'ชำระ', 'ยอดอาหาร', 'ค่าส่ง', 'รวม', 'รายการ', 'หมายเหตุ', 'เหตุยกเลิก'];
+    const rows = orders.map((o) => [
+      new Date(o.createdAt).toLocaleString('th-TH'),
+      o.id,
+      STATUS_TH[o.status] || o.status,
+      o.paymentMethod,
+      o.paymentStatus,
+      b(o.subtotal),
+      b(o.deliveryFee),
+      b(o.total),
+      o.items.map((it) => `${it.nameSnapshot}×${it.qty}`).join('; '),
+      o.note || '',
+      o.cancelReason || '',
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders-${filter || 'all'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       {error && <div className="alert error">{error}</div>}
@@ -124,6 +155,9 @@ export default function Orders({ brandId }: { brandId: string }) {
           <span style={{ fontSize: 12, color: live ? 'var(--st-completed)' : 'var(--text-faint)', fontWeight: 600 }}>
             {live ? '🟢 realtime' : '⚪ offline'}
           </span>
+          <button className="btn ghost sm" onClick={exportCsv} disabled={orders.length === 0}>
+            ⬇ CSV
+          </button>
           <button className="btn ghost sm" onClick={load} disabled={loading}>
             {loading ? <span className="spinner" /> : '↻'} รีเฟรช
           </button>
