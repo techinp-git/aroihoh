@@ -321,6 +321,9 @@ export const updateLineConfig = (
 export const testLineConfig = (brandId: string) =>
   adminFetch<{ ok: boolean; name?: string; userId?: string; error?: string }>(
     `/admin/line-config/test?brandId=${encodeURIComponent(brandId)}`, { method: 'POST' });
+export const getLineUsage = (brandId: string) =>
+  adminFetch<{ reply: number; push: number; total: number; savedByReply: number }>(
+    `/admin/line-config/usage?brandId=${encodeURIComponent(brandId)}`);
 
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {

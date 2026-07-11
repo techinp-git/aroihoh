@@ -328,6 +328,8 @@ async function main() {
   ok(cfgTest.body?.ok === false, 'test line-config (token ปลอม) → ok:false');
   const cfgCust = await req('GET', `/admin/line-config?brandId=${brandId}`, { token: custToken });
   ok(cfgCust.status === 401 || cfgCust.status === 403, 'customer JWT เข้า line-config → 401/403');
+  const usage = await req('GET', `/admin/line-config/usage?brandId=${brandId}`, { token: adminToken });
+  ok(is2xx(usage.status) && typeof usage.body?.reply === 'number' && typeof usage.body?.push === 'number', 'usage: นับ reply(ฟรี)/push(โควตา)', JSON.stringify(usage.body));
   // เคลียร์ค่าทดสอบ (กัน secret ปลอมค้าง → webhook รอบถัดไป fallback env ได้)
   await req('PUT', `/admin/line-config?brandId=${brandId}`, { token: adminToken, body: { channelId: '', channelSecret: '', channelAccessToken: '' } });
 

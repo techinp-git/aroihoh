@@ -9,6 +9,7 @@ import {
   getLineConfig,
   updateLineConfig,
   testLineConfig,
+  getLineUsage,
   ROLE_TH,
   type AdminProfile,
   type Brand,
@@ -23,6 +24,7 @@ function LineSetupCard({ brandId }: { brandId: string }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [usage, setUsage] = useState<{ reply: number; push: number } | null>(null);
 
   const load = useCallback(async () => {
     if (!brandId) return;
@@ -30,6 +32,7 @@ function LineSetupCard({ brandId }: { brandId: string }) {
       const c = await getLineConfig(brandId);
       setCfg(c);
       setF((prev) => ({ ...prev, channelId: c.channelId, liffId: c.liffId }));
+      getLineUsage(brandId).then(setUsage).catch(() => setUsage(null));
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     }
@@ -107,6 +110,14 @@ function LineSetupCard({ brandId }: { brandId: string }) {
       <div className="pay" style={{ fontSize: 12, marginTop: 10 }}>
         ⚠️ Webhook ต้องเป็น HTTPS สาธารณะ — ตอน dev ใช้ tunnel (เช่น cloudflared) หรือ deploy ก่อน
       </div>
+
+      {usage && (usage.reply + usage.push > 0) && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 20 }}>
+          <div><div className="pay">✅ reply (ฟรี)</div><div style={{ fontWeight: 700, color: 'var(--st-completed)' }}>{usage.reply}</div></div>
+          <div><div className="pay">📤 push (นับโควตา)</div><div style={{ fontWeight: 700 }}>{usage.push}</div></div>
+          <div><div className="pay">ประหยัดโควตา</div><div style={{ fontWeight: 700, color: 'var(--accent)' }}>{usage.reply} ข้อความ</div></div>
+        </div>
+      )}
     </div>
   );
 }

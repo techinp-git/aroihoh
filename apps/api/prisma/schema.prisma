@@ -350,6 +350,14 @@ enum MessageType {
   status_push
   welcome
   broadcast
+  auto_reply
+  chat
+}
+
+// ช่องทางส่งจริง — reply ฟรี (ไม่นับโควตา), push นับโควตา
+enum MessageChannel {
+  reply
+  push
 }
 
 enum MessageStatus {
@@ -365,6 +373,7 @@ model MessageLog {
   customerId        String?
   orderId           String?
   type              MessageType
+  channel           MessageChannel? // reply/push — ใช้จริงตอนส่งออก (ดูสัดส่วนประหยัดโควตา)
   dedupeKey         String        @unique
   status            MessageStatus @default(queued)
   providerMessageId String?

@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LineClient } from '../line/line.client';
+import { LineService } from '../line/line.service';
 
 @Injectable()
 export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly line: LineClient,
+    private readonly line: LineService,
   ) {}
 
   // รายการสนทนา: ลูกค้าที่เคยมีข้อความ + ข้อความล่าสุด + จำนวนที่ยังไม่อ่าน
@@ -61,13 +61,15 @@ export class ChatService {
     });
     if (!customer) throw new NotFoundException('ไม่พบลูกค้า');
 
-    // ยิงเข้า LINE จริง (gated: ยังไม่ผูก LINE → skipped, ข้อความยังเก็บใน DB)
-    const push = await this.line.pushText(brandId, customer.lineUserId, text).catch(() => ({ ok: false }));
+    // แอดมินตอบทีหลัง = ไม่มี reply token → sendToCustomer จะ push ให้ (gated ถ้ายังไม่ผูก) + log channel
+    const res = await this.line
+      .sendToCustomer(brandId, customer.lineUserId, text, { type: 'chat', customerId })
+      .catch(() => ({ via: 'push' as const, ok: false, skipped: false }));
 
     const msg = await this.prisma.chatMessage.create({
       data: { brandId, customerId, direction: 'outbound', adminId, text, isRead: true },
     });
-    return { ...msg, delivered: push.ok, skipped: 'skipped' in push ? push.skipped : undefined };
+    return { ...msg, delivered: res.ok, via: res.via, skipped: res.skipped };
   }
 
   // จำลองข้อความขาเข้า (ปกติมาจาก LINE webhook US-10) — ใช้ทดสอบ/seed ระหว่างยังไม่มี LINE

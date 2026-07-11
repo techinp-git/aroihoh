@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { LineConfigService } from './line-config.service';
+import { LineService } from './line.service';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -19,12 +20,22 @@ class UpdateLineConfigDto {
 @Roles('owner')
 @Controller('admin/line-config')
 export class LineConfigController {
-  constructor(private readonly config: LineConfigService) {}
+  constructor(
+    private readonly config: LineConfigService,
+    private readonly line: LineService,
+  ) {}
 
   @Get()
   get(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
     assertBrandAccess(admin, brandId);
     return this.config.get(brandId);
+  }
+
+  // สรุปการใช้ reply(ฟรี) vs push(เสียโควตา)
+  @Get('usage')
+  usage(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    assertBrandAccess(admin, brandId);
+    return this.line.usage(brandId);
   }
 
   @Put()
