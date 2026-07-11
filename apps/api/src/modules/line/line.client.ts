@@ -52,6 +52,18 @@ export class LineClient {
     return { ok: true };
   }
 
+  /** ดึงโปรไฟล์ลูกค้า (displayName/รูป) — คืน null ถ้ายังไม่ผูก LINE หรือดึงไม่ได้ */
+  async getProfile(brandId: string, userId: string): Promise<{ displayName?: string; pictureUrl?: string } | null> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return null;
+    const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { displayName?: string; pictureUrl?: string };
+    return { displayName: j.displayName, pictureUrl: j.pictureUrl };
+  }
+
   /** ทดสอบ token: เรียก LINE /bot/info — คืนชื่อบอทถ้าใช้ได้ */
   async getBotInfo(brandId: string): Promise<{ ok: boolean; name?: string; userId?: string; error?: string }> {
     const { channelAccessToken } = await this.config(brandId);

@@ -19,12 +19,18 @@ export class LineService {
     private readonly line: LineClient,
   ) {}
 
-  // upsert ลูกค้าจาก lineUserId (ดึงโปรไฟล์ทีหลังได้)
+  // upsert ลูกค้าจาก lineUserId + ดึงชื่อ/รูปโปรไฟล์ถ้ายังไม่มี (แชตจะได้เห็นชื่อจริง)
   private async upsertCustomer(brandId: string, lineUserId: string) {
+    const existing = await this.prisma.customer.findUnique({
+      where: { brandId_lineUserId: { brandId, lineUserId } },
+      select: { id: true, displayName: true },
+    });
+    if (existing?.displayName) return existing; // มีชื่อแล้ว ไม่ต้องเรียก LINE ซ้ำ
+    const profile = await this.line.getProfile(brandId, lineUserId).catch(() => null);
     return this.prisma.customer.upsert({
       where: { brandId_lineUserId: { brandId, lineUserId } },
-      create: { brandId, lineUserId },
-      update: {},
+      create: { brandId, lineUserId, displayName: profile?.displayName, pictureUrl: profile?.pictureUrl },
+      update: profile ? { displayName: profile.displayName, pictureUrl: profile.pictureUrl } : {},
       select: { id: true },
     });
   }
