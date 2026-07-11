@@ -4,7 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true → เก็บ Buffer ดิบไว้ที่ req.rawBody สำหรับ verify x-line-signature (กติกาเหล็ก #3)
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({

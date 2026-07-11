@@ -13,7 +13,10 @@
  *  - พักรับออเดอร์ → order 422                              [US-16]
  */
 
+import { createHmac } from 'node:crypto';
+
 const BASE = process.env.API_BASE || 'http://localhost:3000/api';
+const LINE_SECRET = process.env.LINE_CHANNEL_SECRET || 'test-secret-e2e';
 const ADMIN_EMAIL = process.env.ADMIN_SEED_EMAIL || 'owner@chimchiva.local';
 const ADMIN_PASS = process.env.ADMIN_SEED_PASSWORD || 'owner1234';
 
@@ -286,6 +289,32 @@ async function main() {
   // cross-tenant guard
   const wrongAud = await req('GET', `/admin/audiences/${aud.body.id}/preview?brandId=not-a-brand`, { token: adminToken });
   ok(wrongAud.status === 403 || wrongAud.status === 404, 'audience ข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${wrongAud.status}`);
+
+  // 20) LINE webhook — verify x-line-signature (กติกาเหล็ก #3)
+  const evBody = JSON.stringify({
+    events: [{ type: 'message', message: { type: 'text', text: 'e2e webhook hi' }, source: { userId: 'Ue2e-webhook' } }],
+  });
+  const goodSig = createHmac('sha256', LINE_SECRET).update(Buffer.from(evBody)).digest('base64');
+  const rawReq = (sig) =>
+    fetch(`${BASE}/line/webhook/${brandId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(sig ? { 'x-line-signature': sig } : {}) },
+      body: evBody,
+    }).then((r) => r.status);
+  ok((await rawReq('WRONGSIG')) === 401, 'webhook signature ผิด → 401 (กัน event ปลอม)');
+  ok((await rawReq(undefined)) === 401, 'webhook ไม่มี signature → 401');
+  ok((await rawReq(goodSig)) === 200, 'webhook signature ถูก → 200');
+  // ข้อความเข้า Chat Center จริง
+  const chatCust = await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken });
+  const wh = (chatCust.body || []).find((c) => c.lineUserId === 'Ue2e-webhook');
+  ok(!!wh, 'webhook สร้างลูกค้าใหม่จาก LINE userId');
+  if (wh) {
+    const thread = await req('GET', `/admin/chat/${wh.id}?brandId=${brandId}`, { token: adminToken });
+    ok(thread.body?.messages?.some((m) => m.direction === 'inbound' && m.text === 'e2e webhook hi'), 'ข้อความ inbound เข้า Chat Center');
+  }
+  // dispatch broadcast → skipped (ยังไม่มี access token ใน CI)
+  const disp = await req('POST', `/admin/broadcasts/${combo.body.id}/dispatch?brandId=${brandId}`, { token: adminToken });
+  ok(is2xx(disp.status) && disp.body?.skipped === true, 'dispatch broadcast → skipped (ยังไม่เชื่อม LINE)', JSON.stringify(disp.body));
 
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);

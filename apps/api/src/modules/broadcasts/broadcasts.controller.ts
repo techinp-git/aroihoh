@@ -46,6 +46,13 @@ export class BroadcastsController {
     });
   }
 
+  // ยิงออกจริงผ่าน LINE (ถ้าเชื่อม SETUP-1 แล้ว) — ยังไม่เชื่อม = skipped
+  @Post(':id/dispatch')
+  dispatch(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string, @Param('id') id: string) {
+    assertBrandAccess(admin, brandId);
+    return this.broadcasts.dispatch(brandId, id);
+  }
+
   // ⚠️ ต้องอยู่หลัง route คงที่อื่น ๆ (preview) — แต่ preview เป็น POST คนละ method จึงไม่ชน
   @Get(':id')
   detail(

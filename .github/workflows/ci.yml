@@ -48,6 +48,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: e2e-customer-secret
       ADMIN_JWT_SECRET: e2e-admin-secret
+      LINE_CHANNEL_SECRET: test-secret-e2e
       ADMIN_SEED_EMAIL: owner@chimchiva.local
       ADMIN_SEED_PASSWORD: owner1234
       ALLOW_DEV_LOGIN: 'true'

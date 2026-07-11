@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  listContent, listAudiences, listBroadcasts, previewBroadcast, createBroadcast,
+  listContent, listAudiences, listBroadcasts, previewBroadcast, createBroadcast, dispatchBroadcast,
   type Content, type Audience, type Broadcast,
 } from '../../api';
 
@@ -56,6 +56,15 @@ export default function Compose({ brandId }: { brandId: string }) {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  const dispatch = async (b: Broadcast) => {
+    setBusy(true); setError(''); setOk('');
+    try {
+      const r = await dispatchBroadcast(brandId, b.id);
+      setOk(r.skipped ? 'ยังไม่ได้เชื่อม LINE (SETUP-1) — ยิงจริงไม่ได้ ข้อความยังค้างคิวไว้' : `ส่งจริงสำเร็จ ${r.dispatched} คน${r.failed ? ` · ล้มเหลว ${r.failed}` : ''}`);
+      await load();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 780 }}>
       {error && <div className="alert error">{error}</div>}
@@ -104,7 +113,7 @@ export default function Compose({ brandId }: { brandId: string }) {
         <div className="card">
           <div className="table-wrap">
             <table className="data">
-              <thead><tr><th>เวลา</th><th>ข้อความ</th><th>กลุ่ม</th><th>ผู้รับ</th><th>สถานะ</th></tr></thead>
+              <thead><tr><th>เวลา</th><th>ข้อความ</th><th>กลุ่ม</th><th>ผู้รับ</th><th>สถานะ</th><th style={{ textAlign: 'right' }}>จัดการ</th></tr></thead>
               <tbody>
                 {history.map((b) => (
                   <tr key={b.id}>
@@ -113,6 +122,11 @@ export default function Compose({ brandId }: { brandId: string }) {
                     <td>{b.audience?.name ? `🎯 ${b.audience.name}` : b.segment?.tags?.length ? b.segment.tags.join(', ') : 'ทั้งหมด'}</td>
                     <td className="total">{b.audienceCount}</td>
                     <td><span className={`pill ${b.status === 'sent' ? 'on' : 'off'}`}>{STATUS_TH[b.status] || b.status}</span></td>
+                    <td style={{ textAlign: 'right' }}>
+                      {b.status === 'queued' && b.audienceCount > 0 && (
+                        <button className="btn ghost sm" disabled={busy} onClick={() => dispatch(b)}>ส่งจริง</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

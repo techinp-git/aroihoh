@@ -1,0 +1,66 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+
+export interface LineConfig {
+  channelSecret: string | null;
+  channelAccessToken: string | null;
+}
+
+// TODO(SETUP-1): เปลี่ยนเป็น decrypt จริง (secret/token เก็บเข้ารหัสตาม US-25)
+const decrypt = (v: string | null) => v;
+
+@Injectable()
+export class LineClient {
+  private readonly log = new Logger('LineClient');
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** อ่าน config LINE ของแบรนด์ (fallback env สำหรับ dev/แบรนด์เดียว) */
+  async config(brandId: string): Promise<LineConfig> {
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { lineChannelSecretEnc: true, lineChannelTokenEnc: true },
+    });
+    return {
+      channelSecret: decrypt(brand?.lineChannelSecretEnc ?? null) || process.env.LINE_CHANNEL_SECRET || null,
+      channelAccessToken:
+        decrypt(brand?.lineChannelTokenEnc ?? null) || process.env.LINE_CHANNEL_ACCESS_TOKEN || null,
+    };
+  }
+
+  /** LINE ผูกครบหรือยัง (ใช้ตัดสินใจว่าจะยิงจริงหรือ skip) */
+  async isConfigured(brandId: string): Promise<boolean> {
+    return !!(await this.config(brandId)).channelAccessToken;
+  }
+
+  /**
+   * push ข้อความหาลูกค้า 1 คน — คืน { skipped } ถ้ายังไม่ผูก LINE (dev/ก่อน SETUP-1)
+   * ยิงจริงเมื่อมี access token
+   */
+  async pushText(brandId: string, toLineUserId: string, text: string): Promise<{ ok: boolean; skipped?: boolean }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+      body: JSON.stringify({ to: toLineUserId, messages: [{ type: 'text', text }] }),
+    });
+    if (!res.ok) {
+      this.log.warn(`push failed ${res.status} for brand ${brandId}`); // ห้าม log ตัว text/PII (PDPA #6)
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+
+  /** ตอบกลับด้วย replyToken (จาก webhook) — ฟรีกว่า push ไม่กินโควตา */
+  async replyText(brandId: string, replyToken: string, text: string): Promise<{ ok: boolean; skipped?: boolean }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch('https://api.line.me/v2/bot/message/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
+    });
+    return { ok: res.ok };
+  }
+}

@@ -17,6 +17,7 @@ import { StoreModule } from './modules/store/store.module';
 import { BroadcastsModule } from './modules/broadcasts/broadcasts.module';
 import { ContentModule } from './modules/content/content.module';
 import { AudiencesModule } from './modules/audiences/audiences.module';
+import { LineModule } from './modules/line/line.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AudiencesModule } from './modules/audiences/audiences.module';
     BroadcastsModule,
     ContentModule,
     AudiencesModule,
+    LineModule,
   ],
 })
 export class AppModule {}

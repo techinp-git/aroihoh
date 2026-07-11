@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { AudiencesService } from '../audiences/audiences.service';
 import { ContentService } from '../content/content.service';
+import { LineService } from '../line/line.service';
 import { resolveAudience, dedupeKeyFor, type Segment } from './segment';
 import type { AudienceRules } from '../audiences/rules';
 
@@ -18,7 +19,15 @@ export class BroadcastsService {
     private readonly prisma: PrismaService,
     private readonly audiences: AudiencesService,
     private readonly content: ContentService,
+    private readonly line: LineService,
   ) {}
+
+  /** ยิง broadcast ที่ queued ออกจริงผ่าน LINE (ถ้าผูก SETUP-1 แล้ว) — กันส่งซ้ำด้วย message_logs */
+  async dispatch(brandId: string, id: string) {
+    const bc = await this.prisma.broadcast.findFirst({ where: { id, brandId } });
+    if (!bc) throw new NotFoundException('ไม่พบ broadcast');
+    return this.line.dispatchBroadcast(brandId, id);
+  }
 
   // ดึงลูกค้าของแบรนด์ (แค่ field ที่ใช้กับ tag segment — path เดิม)
   private async brandCustomers(brandId: string) {

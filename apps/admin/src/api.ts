@@ -252,6 +252,9 @@ export const createBroadcast = (
   });
 export const listBroadcasts = (brandId: string) =>
   adminFetch<Broadcast[]>(`/admin/broadcasts?brandId=${encodeURIComponent(brandId)}`);
+export const dispatchBroadcast = (brandId: string, id: string) =>
+  adminFetch<{ dispatched: number; skipped?: boolean; failed?: number }>(
+    `/admin/broadcasts/${id}/dispatch?brandId=${encodeURIComponent(brandId)}`, { method: 'POST' });
 
 // ── Content Library (US-18) ──
 export interface Content { id: string; title: string; body: string; createdAt: string; updatedAt: string; }
