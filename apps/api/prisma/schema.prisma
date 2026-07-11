@@ -72,6 +72,8 @@ model Brand {
   auditLogs     AuditLog[]
   chatMessages  ChatMessage[]
   broadcasts    Broadcast[]
+  contents      ContentLibrary[]
+  audiences     Audience[]
 
   @@unique([merchantId, slug])
   @@index([merchantId])
@@ -387,8 +389,10 @@ enum BroadcastStatus {
 model Broadcast {
   id            String          @id @default(uuid())
   brandId       String
-  message       String // ข้อความ (text; flex ภายหลัง)
-  segment       Json? // เกณฑ์กลุ่มเป้าหมาย { tags?: string[] } — null = ทั้งหมด (ที่ไม่ opt-out)
+  message       String // ข้อความ (snapshot ณ เวลาส่ง — มาจาก content หรือพิมพ์สด)
+  segment       Json? // เกณฑ์ ad-hoc { tags?: string[] } — null = ทั้งหมด (ที่ไม่ opt-out)
+  contentId     String? // อ้างคลังข้อความ (ถ้าเลือกจากคลัง)
+  audienceId    String? // อ้างกลุ่มเป้าหมายที่บันทึกไว้ (ถ้าเลือก) — snapshot rules ตอนส่ง
   status        BroadcastStatus @default(draft)
   audienceCount Int             @default(0) // ผู้รับที่ resolve ได้ (หลังหัก opt-out)
   sentCount     Int             @default(0)
@@ -397,10 +401,47 @@ model Broadcast {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  brand Brand @relation(fields: [brandId], references: [id])
+  brand    Brand           @relation(fields: [brandId], references: [id])
+  content  ContentLibrary? @relation(fields: [contentId], references: [id])
+  audience Audience?       @relation(fields: [audienceId], references: [id])
 
   @@index([brandId, createdAt])
   @@map("broadcasts")
+}
+
+// US-18: คลังข้อความใช้ซ้ำ — เขียนเก็บไว้ก่อน แล้วดึงมาใช้ตอนส่ง broadcast
+model ContentLibrary {
+  id        String   @id @default(uuid())
+  brandId   String
+  title     String
+  body      String
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand      Brand       @relation(fields: [brandId], references: [id])
+  broadcasts Broadcast[]
+
+  @@index([brandId, createdAt])
+  @@map("content_library")
+}
+
+// US-18: กลุ่มเป้าหมายที่บันทึกไว้ล่วงหน้า — rules ประเมินสด (dynamic) ตอน preview/ส่ง
+model Audience {
+  id          String   @id @default(uuid())
+  brandId     String
+  name        String
+  description String?
+  rules       Json // { match: 'all'|'any', criteria: [...] } — ดู audiences/rules.ts
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brand      Brand       @relation(fields: [brandId], references: [id])
+  broadcasts Broadcast[]
+
+  @@index([brandId, createdAt])
+  @@map("audiences")
 }
 
 // ─────────────────────────── Admin / audit ───────────────────────────

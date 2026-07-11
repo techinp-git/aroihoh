@@ -28,7 +28,7 @@ export class BroadcastsController {
     @Body() dto: PreviewBroadcastDto,
   ) {
     assertBrandAccess(admin, brandId);
-    return this.broadcasts.preview(brandId, dto.segment);
+    return this.broadcasts.preview(brandId, { segment: dto.segment, audienceId: dto.audienceId });
   }
 
   @Post()
@@ -38,7 +38,12 @@ export class BroadcastsController {
     @Body() dto: CreateBroadcastDto,
   ) {
     assertBrandAccess(admin, brandId);
-    return this.broadcasts.create(brandId, admin.sub, { message: dto.message, segment: dto.segment });
+    return this.broadcasts.create(brandId, admin.sub, {
+      message: dto.message,
+      contentId: dto.contentId,
+      segment: dto.segment,
+      audienceId: dto.audienceId,
+    });
   }
 
   // ⚠️ ต้องอยู่หลัง route คงที่อื่น ๆ (preview) — แต่ preview เป็น POST คนละ method จึงไม่ชน

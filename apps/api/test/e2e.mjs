@@ -250,6 +250,43 @@ async function main() {
   // คืน opt-out
   await req('PATCH', `/admin/customers/${buyer.id}/opt-out?brandId=${brandId}`, { token: adminToken, body: { optedOut: false } });
 
+  // 17) US-18 Content Library
+  const content = await req('POST', `/admin/content?brandId=${brandId}`, {
+    token: adminToken, body: { title: 'E2E คอนเทนต์', body: '🎉 โปร E2E ลด 20%' },
+  });
+  ok(is2xx(content.status) && content.body?.id, 'สร้าง content ในคลัง', JSON.stringify(content.body));
+  const contentList = await req('GET', `/admin/content?brandId=${brandId}`, { token: adminToken });
+  ok(contentList.status === 200 && contentList.body.some((c) => c.id === content.body.id), 'content list มีรายการที่สร้าง');
+  const custContent = await req('GET', `/admin/content?brandId=${brandId}`, { token: custToken });
+  ok(custContent.status === 401 || custContent.status === 403, 'customer JWT เข้า content → 401/403', `ได้ ${custContent.status}`);
+
+  // 18) US-18 Saved Audiences (rules) — สั่ง ≥1 ครั้งใน 7 วัน
+  const presets = await req('GET', '/admin/audiences/presets', { token: adminToken });
+  ok(presets.status === 200 && presets.body.length === 3, 'audience presets = 3 (member/frequent/lapsed)');
+  const aud = await req('POST', `/admin/audiences?brandId=${brandId}`, {
+    token: adminToken,
+    body: { name: 'E2E แอคทีฟ', rules: { match: 'all', criteria: [{ type: 'order_count_in_window', windowDays: 7, minCount: 1 }] } },
+  });
+  ok(is2xx(aud.status) && aud.body?.id, 'สร้าง audience จาก rules', JSON.stringify(aud.body));
+  const audPrev = await req('GET', `/admin/audiences/${aud.body.id}/preview?brandId=${brandId}`, { token: adminToken });
+  ok(is2xx(audPrev.status) && audPrev.body.audienceCount >= 1, 'preview audience (สั่งใน 7 วัน) ได้ผู้รับ ≥1', JSON.stringify(audPrev.body));
+  // validate: rules พังต้อง 400
+  const badAud = await req('POST', `/admin/audiences?brandId=${brandId}`, {
+    token: adminToken, body: { name: 'พัง', rules: { match: 'all', criteria: [{ type: 'lapsed', inactiveDays: 0, lookbackDays: 5 }] } },
+  });
+  ok(badAud.status === 400, 'rules ผิด (inactiveDays=0) → 400', `ได้ ${badAud.status}`);
+
+  // 19) Broadcast จาก content + audience
+  const combo = await req('POST', `/admin/broadcasts?brandId=${brandId}`, {
+    token: adminToken, body: { contentId: content.body.id, audienceId: aud.body.id },
+  });
+  ok(is2xx(combo.status) && combo.body?.message === '🎉 โปร E2E ลด 20%', 'broadcast ดึงข้อความจาก content');
+  ok(combo.body?.audienceCount === audPrev.body.audienceCount, 'ผู้รับ broadcast = preview ของ audience');
+  ok(combo.body?.contentId === content.body.id && combo.body?.audienceId === aud.body.id, 'broadcast ผูก contentId + audienceId');
+  // cross-tenant guard
+  const wrongAud = await req('GET', `/admin/audiences/${aud.body.id}/preview?brandId=not-a-brand`, { token: adminToken });
+  ok(wrongAud.status === 403 || wrongAud.status === 404, 'audience ข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${wrongAud.status}`);
+
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);
   if (fail > 0) {

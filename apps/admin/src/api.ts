@@ -230,23 +230,70 @@ export const sendChat = (brandId: string, customerId: string, text: string) =>
 // ── Broadcast (US-18) ──
 export interface Broadcast {
   id: string; message: string; segment: { tags?: string[] } | null;
+  contentId: string | null; audienceId: string | null;
+  content?: { title: string } | null; audience?: { name: string } | null;
   status: string; audienceCount: number; sentCount: number; failedCount: number;
   createdBy: string | null; createdAt: string;
 }
 export interface BroadcastPreview { totalCustomers: number; optedOut: number; audienceCount: number; }
 
-export const previewBroadcast = (brandId: string, segment?: { tags?: string[] }) =>
+export const previewBroadcast = (brandId: string, opts: { segment?: { tags?: string[] }; audienceId?: string }) =>
   adminFetch<BroadcastPreview>(`/admin/broadcasts/preview?brandId=${encodeURIComponent(brandId)}`, {
     method: 'POST',
-    body: JSON.stringify({ segment }),
+    body: JSON.stringify(opts),
   });
-export const createBroadcast = (brandId: string, message: string, segment?: { tags?: string[] }) =>
+export const createBroadcast = (
+  brandId: string,
+  body: { message?: string; contentId?: string; segment?: { tags?: string[] }; audienceId?: string },
+) =>
   adminFetch<Broadcast>(`/admin/broadcasts?brandId=${encodeURIComponent(brandId)}`, {
     method: 'POST',
-    body: JSON.stringify({ message, segment }),
+    body: JSON.stringify(body),
   });
 export const listBroadcasts = (brandId: string) =>
   adminFetch<Broadcast[]>(`/admin/broadcasts?brandId=${encodeURIComponent(brandId)}`);
+
+// ── Content Library (US-18) ──
+export interface Content { id: string; title: string; body: string; createdAt: string; updatedAt: string; }
+export const listContent = (brandId: string) =>
+  adminFetch<Content[]>(`/admin/content?brandId=${encodeURIComponent(brandId)}`);
+export const createContent = (brandId: string, title: string, body: string) =>
+  adminFetch<Content>(`/admin/content?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST', body: JSON.stringify({ title, body }),
+  });
+export const updateContent = (brandId: string, id: string, body: { title?: string; body?: string }) =>
+  adminFetch<Content>(`/admin/content/${id}?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'PATCH', body: JSON.stringify(body),
+  });
+export const deleteContent = (brandId: string, id: string) =>
+  adminFetch<{ deleted: boolean }>(`/admin/content/${id}?brandId=${encodeURIComponent(brandId)}`, { method: 'DELETE' });
+
+// ── Audiences (US-18) — กลุ่มเป้าหมายที่บันทึกไว้ (rules ประเมินสด) ──
+export type Criterion =
+  | { type: 'tenure_min_days'; days: number }
+  | { type: 'order_count_in_window'; windowDays: number; minCount: number }
+  | { type: 'lapsed'; inactiveDays: number; lookbackDays: number }
+  | { type: 'tags'; tags: string[] };
+export interface AudienceRules { match: 'all' | 'any'; criteria: Criterion[]; }
+export interface Audience {
+  id: string; name: string; description: string | null; rules: AudienceRules;
+  createdAt: string; updatedAt: string;
+}
+export interface AudiencePreset { key: string; name: string; rules: AudienceRules; }
+
+export const listAudiences = (brandId: string) =>
+  adminFetch<Audience[]>(`/admin/audiences?brandId=${encodeURIComponent(brandId)}`);
+export const audiencePresets = () => adminFetch<AudiencePreset[]>('/admin/audiences/presets');
+export const previewAudienceRules = (brandId: string, rules: AudienceRules) =>
+  adminFetch<BroadcastPreview>(`/admin/audiences/preview?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST', body: JSON.stringify({ rules }),
+  });
+export const createAudience = (brandId: string, body: { name: string; description?: string; rules: AudienceRules }) =>
+  adminFetch<Audience>(`/admin/audiences?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST', body: JSON.stringify(body),
+  });
+export const deleteAudience = (brandId: string, id: string) =>
+  adminFetch<{ deleted: boolean }>(`/admin/audiences/${id}?brandId=${encodeURIComponent(brandId)}`, { method: 'DELETE' });
 
 export const setCustomerOptOut = (brandId: string, id: string, optedOut: boolean) =>
   adminFetch<{ id: string; marketingOptedOut: boolean }>(

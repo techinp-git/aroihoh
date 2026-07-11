@@ -1,12 +1,26 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AudiencesService } from '../audiences/audiences.service';
+import { ContentService } from '../content/content.service';
 import { resolveAudience, dedupeKeyFor, type Segment } from './segment';
+import type { AudienceRules } from '../audiences/rules';
+
+export interface CreateBroadcastInput {
+  message?: string;
+  segment?: Segment | null;
+  contentId?: string;
+  audienceId?: string;
+}
 
 @Injectable()
 export class BroadcastsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audiences: AudiencesService,
+    private readonly content: ContentService,
+  ) {}
 
-  // ดึงลูกค้าของแบรนด์ (เฉพาะ field ที่ใช้ resolve — ไม่ดึง PII เช่น phoneEnc)
+  // ดึงลูกค้าของแบรนด์ (แค่ field ที่ใช้กับ tag segment — path เดิม)
   private async brandCustomers(brandId: string) {
     return this.prisma.customer.findMany({
       where: { brandId },
@@ -14,50 +28,68 @@ export class BroadcastsService {
     });
   }
 
-  /** ประเมินจำนวนผู้รับก่อนส่งจริง (โชว์ reach ให้แอดมินตัดสินใจ) — เคารพ opt-out */
-  async preview(brandId: string, segment?: Segment | null) {
+  /**
+   * ประเมินผู้รับก่อนส่ง — รองรับ 2 ทาง:
+   *  - audienceId → ใช้ rules ของกลุ่มที่บันทึกไว้ (dynamic, ผ่าน AudiencesService)
+   *  - segment (tags) → path เดิม (ad-hoc)
+   */
+  async preview(brandId: string, opts: { segment?: Segment | null; audienceId?: string }) {
+    if (opts.audienceId) return this.audiences.previewSaved(brandId, opts.audienceId);
     const customers = await this.brandCustomers(brandId);
-    const audience = resolveAudience(customers, segment);
-    const optedOut = customers.filter((c) => c.marketingOptedOut).length;
+    const audience = resolveAudience(customers, opts.segment);
     return {
       totalCustomers: customers.length,
-      optedOut, // ถูกกันออกตาม PDPA
+      optedOut: customers.filter((c) => c.marketingOptedOut).length,
       audienceCount: audience.length,
     };
   }
 
   /**
    * สร้าง + จ่ายคิว broadcast
-   * - resolve ผู้รับ (หัก opt-out) แล้วจอง message_logs (queued, dedupeKey) กันส่งซ้ำ (#7)
-   * - การยิงเข้า LINE จริงรอ line worker (SETUP-1) → ตอนนี้ค้าง status 'queued'
+   *  - ข้อความ: จาก contentId (คลัง) หรือพิมพ์สด (message)
+   *  - ผู้รับ: จาก audienceId (rules) หรือ segment (tags) — หัก opt-out เสมอ
+   *  - จอง message_logs (queued, dedupeKey) กันส่งซ้ำ (#7); ยิง LINE จริงรอ SETUP-1
    */
-  async create(
-    brandId: string,
-    adminId: string,
-    dto: { message: string; segment?: Segment | null },
-  ) {
-    const customers = await this.brandCustomers(brandId);
-    const audience = resolveAudience(customers, dto.segment);
+  async create(brandId: string, adminId: string, input: CreateBroadcastInput) {
+    // 1) resolve ข้อความ
+    let message = input.message?.trim();
+    if (input.contentId) {
+      const c = await this.content.assert(brandId, input.contentId); // กัน cross-tenant
+      message = c.body;
+    }
+    if (!message) throw new BadRequestException('ต้องมีข้อความ (เลือกจากคลัง หรือพิมพ์สด)');
 
+    // 2) resolve ผู้รับ
+    let recipientIds: string[];
+    if (input.audienceId) {
+      const a = await this.audiences.get(brandId, input.audienceId); // กัน cross-tenant + not found
+      recipientIds = await this.audiences.resolveIds(brandId, a.rules as unknown as AudienceRules);
+    } else {
+      const customers = await this.brandCustomers(brandId);
+      recipientIds = resolveAudience(customers, input.segment).map((c) => c.id);
+    }
+
+    // 3) บันทึก + จองคิว
     return this.prisma.$transaction(async (tx) => {
       const broadcast = await tx.broadcast.create({
         data: {
           brandId,
-          message: dto.message,
-          segment: (dto.segment ?? undefined) as object | undefined,
+          message,
+          segment: (input.segment ?? undefined) as object | undefined,
+          contentId: input.contentId ?? null,
+          audienceId: input.audienceId ?? null,
           status: 'queued',
-          audienceCount: audience.length,
+          audienceCount: recipientIds.length,
           createdBy: adminId,
         },
       });
-
-      if (audience.length > 0) {
+      if (recipientIds.length > 0) {
         await tx.messageLog.createMany({
-          data: audience.map((c) => ({
+          data: recipientIds.map((cid) => ({
             brandId,
-            customerId: c.id,
+            customerId: cid,
             type: 'broadcast' as const,
-            dedupeKey: dedupeKeyFor(broadcast.id, c.id),
+            dedupeKey: dedupeKeyFor(broadcast.id, cid),
             status: 'queued' as const,
           })),
           skipDuplicates: true,
@@ -68,20 +100,21 @@ export class BroadcastsService {
     });
   }
 
-  /** ประวัติ broadcast ของแบรนด์ */
   list(brandId: string) {
     return this.prisma.broadcast.findMany({
       where: { brandId },
       orderBy: { createdAt: 'desc' },
       take: 50,
+      include: {
+        content: { select: { title: true } },
+        audience: { select: { name: true } },
+      },
     });
   }
 
-  /** รายละเอียด + สรุปสถานะ message_logs ของ broadcast นั้น */
   async detail(brandId: string, id: string) {
     const broadcast = await this.prisma.broadcast.findFirst({ where: { id, brandId } });
     if (!broadcast) throw new NotFoundException('ไม่พบ broadcast');
-
     const logs = await this.prisma.messageLog.groupBy({
       by: ['status'],
       where: { brandId, type: 'broadcast', dedupeKey: { startsWith: `bcast:${id}:` } },
