@@ -206,19 +206,25 @@ export const updateCustomerTags = (brandId: string, id: string, tags: string[]) 
   );
 
 export interface ChatConversation {
-  customerId: string; displayName: string | null; lastMessage: string;
-  lastAt: string | null; lastDirection: string | null; unread: number;
+  customerId: string; brandId: string; brandName: string; displayName: string | null;
+  lastMessage: string; lastAt: string | null; lastDirection: string | null; unread: number;
 }
 export interface ChatMsg {
   id: string; direction: 'inbound' | 'outbound'; text: string; adminId: string | null; createdAt: string;
 }
 export interface ChatThread {
-  customer: { id: string; displayName: string | null; lineUserId: string };
+  customer: {
+    id: string; displayName: string | null; lineUserId: string;
+    brandId: string; brand: { name: string };
+  };
   messages: ChatMsg[];
 }
 
-export const listConversations = (brandId: string) =>
-  adminFetch<ChatConversation[]>(`/admin/chat/conversations?brandId=${encodeURIComponent(brandId)}`);
+// US-40: ไม่ส่ง brandId = inbox รวมทุกแบรนด์ที่ admin มีสิทธิ์
+export const listConversations = (brandId?: string) =>
+  adminFetch<ChatConversation[]>(
+    '/admin/chat/conversations' + (brandId ? `?brandId=${encodeURIComponent(brandId)}` : ''),
+  );
 export const getThread = (brandId: string, customerId: string) =>
   adminFetch<ChatThread>(`/admin/chat/${customerId}?brandId=${encodeURIComponent(brandId)}`);
 export const sendChat = (brandId: string, customerId: string, text: string) =>

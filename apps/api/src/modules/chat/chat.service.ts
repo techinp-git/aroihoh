@@ -10,14 +10,19 @@ export class ChatService {
   ) {}
 
   // รายการสนทนา: ลูกค้าที่เคยมีข้อความ + ข้อความล่าสุด + จำนวนที่ยังไม่อ่าน
-  async conversations(brandId: string) {
+  // US-40: รับหลายแบรนด์ (Chat Center เดียว) — แต่ละห้องติด brandId/brandName บอกว่าคุยผ่าน OA ไหน
+  async conversations(brandIds: string[]) {
+    if (brandIds.length === 0) return [];
     const customers = await this.prisma.customer.findMany({
-      where: { brandId, chatMessages: { some: {} } },
-      include: { chatMessages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      where: { brandId: { in: brandIds }, chatMessages: { some: {} } },
+      include: {
+        chatMessages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        brand: { select: { id: true, name: true } },
+      },
     });
     const unread = await this.prisma.chatMessage.groupBy({
       by: ['customerId'],
-      where: { brandId, direction: 'inbound', isRead: false },
+      where: { brandId: { in: brandIds }, direction: 'inbound', isRead: false },
       _count: { _all: true },
     });
     const unreadMap = new Map(unread.map((u) => [u.customerId, u._count._all]));
@@ -25,6 +30,8 @@ export class ChatService {
     return customers
       .map((c) => ({
         customerId: c.id,
+        brandId: c.brandId,
+        brandName: c.brand.name,
         displayName: c.displayName,
         lastMessage: c.chatMessages[0]?.text ?? '',
         lastAt: c.chatMessages[0]?.createdAt ?? null,
@@ -38,7 +45,13 @@ export class ChatService {
   async thread(brandId: string, customerId: string) {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, brandId },
-      select: { id: true, displayName: true, lineUserId: true },
+      select: {
+        id: true,
+        displayName: true,
+        lineUserId: true,
+        brandId: true,
+        brand: { select: { name: true } }, // US-40: บอกว่าห้องนี้คุยผ่าน OA ไหน
+      },
     });
     if (!customer) throw new NotFoundException('ไม่พบลูกค้า');
 

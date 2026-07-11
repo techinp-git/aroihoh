@@ -180,7 +180,7 @@ export default function App() {
           {view === 'dashboard' && <Dashboard brandId={brandId} />}
           {view === 'orders' && <Orders brandId={brandId} />}
           {view === 'menu' && <Menu brandId={brandId} />}
-          {view === 'chat' && <Chat brandId={brandId} />}
+          {view === 'chat' && <Chat />} {/* US-40: inbox เดียวรวมทุกแบรนด์ */}
           {view === 'broadcast' && <Broadcast brandId={brandId} />}
           {view === 'customers' && <Customers brandId={brandId} />}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}

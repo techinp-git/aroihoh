@@ -311,7 +311,12 @@ async function main() {
   if (wh) {
     const thread = await req('GET', `/admin/chat/${wh.id}?brandId=${brandId}`, { token: adminToken });
     ok(thread.body?.messages?.some((m) => m.direction === 'inbound' && m.text === 'e2e webhook hi'), 'ข้อความ inbound เข้า Chat Center');
+    ok(thread.body?.customer?.brand?.name, 'thread บอกว่าคุยผ่าน OA/แบรนด์ไหน (US-40)');
   }
+  // US-40: Chat Center เดียว — ไม่ส่ง brandId = inbox รวมทุกแบรนด์ที่มีสิทธิ์ + ทุกห้องติดป้ายแบรนด์
+  const inboxAll = await req('GET', '/admin/chat/conversations', { token: adminToken });
+  ok(is2xx(inboxAll.status) && Array.isArray(inboxAll.body), 'GET conversations (ไม่ระบุ brandId) → inbox รวม');
+  ok(inboxAll.body.some((c) => c.customerId === wh?.id && c.brandName), 'inbox รวมมีห้องจาก webhook + ติด brandName');
   // dispatch broadcast → skipped (ยังไม่มี access token ใน CI)
   const disp = await req('POST', `/admin/broadcasts/${combo.body.id}/dispatch?brandId=${brandId}`, { token: adminToken });
   ok(is2xx(disp.status) && disp.body?.skipped === true, 'dispatch broadcast → skipped (ยังไม่เชื่อม LINE)', JSON.stringify(disp.body));

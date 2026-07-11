@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   listConversations,
   getThread,
@@ -16,9 +16,38 @@ import { TagEditor } from '../components/Tags';
 const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
-export default function Chat({ brandId }: { brandId: string }) {
+// สีประจำแบรนด์ (deterministic จากชื่อ) — ใช้เป็นป้ายบอกว่าห้องนี้คุยผ่าน OA ไหน (US-40)
+const brandHue = (name: string) => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+};
+function BrandChip({ name }: { name: string }) {
+  const hue = brandHue(name);
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize: 10,
+        fontWeight: 600,
+        padding: '1px 7px',
+        borderRadius: 999,
+        background: `hsl(${hue} 70% 92%)`,
+        color: `hsl(${hue} 60% 32%)`,
+        border: `1px solid hsl(${hue} 55% 78%)`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {name}
+    </span>
+  );
+}
+
+// US-40: Chat Center เดียวรวมทุกแบรนด์ — ไม่ตามแบรนด์ที่เลือกด้านบน แต่ติดป้ายแบรนด์ทุกห้อง
+export default function Chat() {
   const [convs, setConvs] = useState<ChatConversation[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [filterBrand, setFilterBrand] = useState(''); // '' = ทุกแบรนด์
+  const [selected, setSelected] = useState<{ customerId: string; brandId: string } | null>(null);
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [cust, setCust] = useState<CustomerDetail | null>(null);
   const [text, setText] = useState('');
@@ -27,26 +56,35 @@ export default function Chat({ brandId }: { brandId: string }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadConvs = useCallback(async () => {
-    if (!brandId) return;
     setError('');
     try {
-      setConvs(await listConversations(brandId));
+      setConvs(await listConversations()); // ทุกแบรนด์ที่มีสิทธิ์
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [brandId]);
+  }, []);
 
   useEffect(() => {
     loadConvs();
   }, [loadConvs]);
 
+  // แบรนด์ที่โผล่ใน inbox (ไว้ทำตัวกรอง)
+  const brands = useMemo(() => {
+    const m = new Map<string, string>();
+    convs.forEach((c) => m.set(c.brandId, c.brandName));
+    return [...m.entries()].map(([id, name]) => ({ id, name }));
+  }, [convs]);
+
+  const shown = filterBrand ? convs.filter((c) => c.brandId === filterBrand) : convs;
+
   const openThread = useCallback(
-    async (customerId: string) => {
-      setSelected(customerId);
+    async (conv: ChatConversation) => {
+      setSelected({ customerId: conv.customerId, brandId: conv.brandId });
       try {
+        // ห้องแชตผูกกับแบรนด์ของลูกค้าคนนั้น — ตอบกลับจะออกผ่าน OA แบรนด์นี้เสมอ
         const [t, c] = await Promise.all([
-          getThread(brandId, customerId),
-          getCustomer(brandId, customerId),
+          getThread(conv.brandId, conv.customerId),
+          getCustomer(conv.brandId, conv.customerId),
         ]);
         setThread(t);
         setCust(c);
@@ -55,7 +93,7 @@ export default function Chat({ brandId }: { brandId: string }) {
         setError((e as Error).message);
       }
     },
-    [brandId, loadConvs],
+    [loadConvs],
   );
 
   useEffect(() => {
@@ -68,9 +106,9 @@ export default function Chat({ brandId }: { brandId: string }) {
     setSending(true);
     setError('');
     try {
-      await sendChat(brandId, selected, t);
+      await sendChat(selected.brandId, selected.customerId, t);
       setText('');
-      setThread(await getThread(brandId, selected));
+      setThread(await getThread(selected.brandId, selected.customerId));
       loadConvs();
     } catch (e) {
       setError((e as Error).message);
@@ -80,9 +118,9 @@ export default function Chat({ brandId }: { brandId: string }) {
   };
 
   const saveTags = async (tags: string[]) => {
-    if (!cust) return;
+    if (!cust || !selected) return;
     try {
-      await updateCustomerTags(brandId, cust.id, tags);
+      await updateCustomerTags(selected.brandId, cust.id, tags);
       setCust({ ...cust, tags });
     } catch (e) {
       setError((e as Error).message);
@@ -93,16 +131,37 @@ export default function Chat({ brandId }: { brandId: string }) {
     <>
       {error && <div className="alert error">{error}</div>}
       <div className="chat-wrap">
-        {/* conversation list */}
+        {/* conversation list — inbox รวมทุกแบรนด์ */}
         <div className="card conv-list">
-          {convs.map((c) => (
+          {brands.length > 1 && (
+            <div style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+              <select
+                value={filterBrand}
+                onChange={(e) => setFilterBrand(e.target.value)}
+                style={{ width: '100%', fontSize: 12 }}
+              >
+                <option value="">📥 ทุกแบรนด์ ({convs.length})</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({convs.filter((c) => c.brandId === b.id).length})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {shown.map((c) => (
             <div
               key={c.customerId}
-              className={`conv-item ${selected === c.customerId ? 'active' : ''}`}
-              onClick={() => openThread(c.customerId)}
+              className={`conv-item ${selected?.customerId === c.customerId ? 'active' : ''}`}
+              onClick={() => openThread(c)}
             >
               <div style={{ minWidth: 0 }}>
-                <div className="cname">{c.displayName || '(ไม่มีชื่อ)'}</div>
+                <div className="cname" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {c.displayName || '(ไม่มีชื่อ)'}
+                  </span>
+                  <BrandChip name={c.brandName} />
+                </div>
                 <div className="cmsg">
                   {c.lastDirection === 'outbound' ? 'คุณ: ' : ''}
                   {c.lastMessage}
@@ -111,7 +170,7 @@ export default function Chat({ brandId }: { brandId: string }) {
               {c.unread > 0 && <span className="unread">{c.unread}</span>}
             </div>
           ))}
-          {convs.length === 0 && <div className="state">ยังไม่มีบทสนทนา</div>}
+          {shown.length === 0 && <div className="state">ยังไม่มีบทสนทนา</div>}
         </div>
 
         {/* thread */}
@@ -126,8 +185,13 @@ export default function Chat({ brandId }: { brandId: string }) {
           ) : (
             <>
               <div className="thread-head">
-                {thread.customer.displayName || '(ไม่มีชื่อ)'}
-                <div className="sub">LINE: {thread.customer.lineUserId}</div>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {thread.customer.displayName || '(ไม่มีชื่อ)'}
+                  <BrandChip name={thread.customer.brand.name} />
+                </span>
+                <div className="sub">
+                  คุยผ่าน OA: {thread.customer.brand.name} · LINE: {thread.customer.lineUserId}
+                </div>
               </div>
               <div className="bubbles">
                 {thread.messages.map((m) => (
@@ -143,7 +207,7 @@ export default function Chat({ brandId }: { brandId: string }) {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && send()}
-                  placeholder="พิมพ์ข้อความ… (ส่งเข้า LINE เมื่อเชื่อม SETUP-1)"
+                  placeholder={`ตอบกลับผ่าน OA: ${thread.customer.brand.name}`}
                   disabled={sending}
                 />
                 <button className="btn primary" onClick={send} disabled={sending || !text.trim()}>
