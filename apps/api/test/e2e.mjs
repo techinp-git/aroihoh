@@ -316,6 +316,21 @@ async function main() {
   const disp = await req('POST', `/admin/broadcasts/${combo.body.id}/dispatch?brandId=${brandId}`, { token: adminToken });
   ok(is2xx(disp.status) && disp.body?.skipped === true, 'dispatch broadcast → skipped (ยังไม่เชื่อม LINE)', JSON.stringify(disp.body));
 
+  // 21) LINE config (US-25/SETUP-1) — owner only, ไม่คืน secret/token ดิบ
+  const cfg0 = await req('GET', `/admin/line-config?brandId=${brandId}`, { token: adminToken });
+  ok(is2xx(cfg0.status) && typeof cfg0.body?.webhookUrl === 'string', 'GET line-config (มี webhookUrl)');
+  const cfgPut = await req('PUT', `/admin/line-config?brandId=${brandId}`, {
+    token: adminToken, body: { channelId: '2000e2e', channelSecret: 'e2e-sec', channelAccessToken: 'e2e-tok' },
+  });
+  ok(cfgPut.body?.configured === true && cfgPut.body?.hasChannelSecret === true, 'PUT line-config → configured');
+  ok(cfgPut.body?.channelSecret === undefined && cfgPut.body?.channelAccessToken === undefined, 'line-config ไม่คืน secret/token ดิบ (security)');
+  const cfgTest = await req('POST', `/admin/line-config/test?brandId=${brandId}`, { token: adminToken });
+  ok(cfgTest.body?.ok === false, 'test line-config (token ปลอม) → ok:false');
+  const cfgCust = await req('GET', `/admin/line-config?brandId=${brandId}`, { token: custToken });
+  ok(cfgCust.status === 401 || cfgCust.status === 403, 'customer JWT เข้า line-config → 401/403');
+  // เคลียร์ค่าทดสอบ (กัน secret ปลอมค้าง → webhook รอบถัดไป fallback env ได้)
+  await req('PUT', `/admin/line-config?brandId=${brandId}`, { token: adminToken, body: { channelId: '', channelSecret: '', channelAccessToken: '' } });
+
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);
   if (fail > 0) {

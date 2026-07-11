@@ -52,6 +52,18 @@ export class LineClient {
     return { ok: true };
   }
 
+  /** ทดสอบ token: เรียก LINE /bot/info — คืนชื่อบอทถ้าใช้ได้ */
+  async getBotInfo(brandId: string): Promise<{ ok: boolean; name?: string; userId?: string; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, error: 'ยังไม่ได้ตั้ง Channel access token' };
+    const res = await fetch('https://api.line.me/v2/bot/info', {
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    if (!res.ok) return { ok: false, error: `LINE ตอบกลับ ${res.status} (token อาจผิด/หมดอายุ)` };
+    const j = (await res.json()) as { displayName?: string; userId?: string };
+    return { ok: true, name: j.displayName, userId: j.userId };
+  }
+
   /** ตอบกลับด้วย replyToken (จาก webhook) — ฟรีกว่า push ไม่กินโควตา */
   async replyText(brandId: string, replyToken: string, text: string): Promise<{ ok: boolean; skipped?: boolean }> {
     const { channelAccessToken } = await this.config(brandId);

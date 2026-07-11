@@ -304,6 +304,24 @@ export const setCustomerOptOut = (brandId: string, id: string, optedOut: boolean
     { method: 'PATCH', body: JSON.stringify({ optedOut }) },
   );
 
+// ── LINE config (US-25 / SETUP-1) — owner only, ไม่คืน secret/token ดิบ ──
+export interface LineConfig {
+  channelId: string; liffId: string;
+  hasChannelSecret: boolean; hasAccessToken: boolean;
+  configured: boolean; webhookUrl: string;
+}
+export const getLineConfig = (brandId: string) =>
+  adminFetch<LineConfig>(`/admin/line-config?brandId=${encodeURIComponent(brandId)}`);
+export const updateLineConfig = (
+  brandId: string,
+  body: { channelId?: string; liffId?: string; channelSecret?: string; channelAccessToken?: string },
+) => adminFetch<LineConfig>(`/admin/line-config?brandId=${encodeURIComponent(brandId)}`, {
+  method: 'PUT', body: JSON.stringify(body),
+});
+export const testLineConfig = (brandId: string) =>
+  adminFetch<{ ok: boolean; name?: string; userId?: string; error?: string }>(
+    `/admin/line-config/test?brandId=${encodeURIComponent(brandId)}`, { method: 'POST' });
+
 export const listAdminUsers = () => adminFetch<AdminUser[]>('/admin/users');
 export const createAdminUser = (body: {
   email: string; password: string; name: string; role: string; brandIds?: string[];
