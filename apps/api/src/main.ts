@@ -15,7 +15,15 @@ async function bootstrap() {
     }),
   );
   // LIFF/Admin รันคนละ origin ตอน dev — production ให้ล็อก origin จริงผ่าน env
-  app.enableCors({ origin: true, credentials: true });
+  // CORS_ORIGINS = รายการ origin คั่นด้วย comma (เช่น https://order.jivecode.click,https://admin.jivecode.click)
+  // ไม่ตั้ง = อนุญาตทุก origin (dev เท่านั้น) — prod ต้องตั้งเสมอ
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: corsOrigins && corsOrigins.length ? corsOrigins : true,
+    credentials: true,
+  });
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

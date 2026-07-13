@@ -1,0 +1,49 @@
+# AroiHoh production stack (Hetzner Cloud) — API + Postgres(PostGIS)
+# Caddy อยู่บน host แล้ว (คนละ project) → reverse_proxy มาที่ 127.0.0.1:3000
+# static (LIFF/Admin) เสิร์ฟผ่าน Caddy เดิม (ดู deploy/Caddyfile.snippet)
+#
+# ใช้:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: aroihoh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # ไม่เปิด ports ออกนอก — เข้าถึงได้แค่ผ่าน docker network ภายใน (ปลอดภัย)
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: aroihoh-api
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # เปิดเฉพาะ localhost ของ host → Caddy บน host วิ่งเข้ามาได้ แต่โลกภายนอกเข้าตรงไม่ได้
+    ports:
+      - '127.0.0.1:3000:3000'
+
+  # Redis — เปิดใช้ตอนทำ BullMQ (US-09) แล้วค่อยปลดคอมเมนต์ + ตั้ง REDIS_URL=redis://redis:6379
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: aroihoh-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redisdata:/data
+
+volumes:
+  pgdata:
+  # redisdata:

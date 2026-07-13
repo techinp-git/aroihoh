@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.github
+**/.env
+**/.env.*
+!**/.env.example
+apps/liff
+apps/admin
+docs
+*.md
+docker-compose*.yml
+.dockerignore
+Dockerfile

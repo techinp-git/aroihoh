@@ -1,0 +1,30 @@
+# ── AroiHoh — เพิ่ม 3 บล็อกนี้เข้าไปใน Caddyfile เดิมของคุณ ──
+# (project เดิมอยู่ต่อได้ ไม่กระทบ) Caddy จะขอ HTTPS (Let's Encrypt) ให้อัตโนมัติ
+# หลังแก้:  sudo caddy validate --config /etc/caddy/Caddyfile  แล้ว  sudo systemctl reload caddy
+
+# API — reverse proxy ไปที่ container ที่เปิด 127.0.0.1:3000
+api.jivecode.click {
+	reverse_proxy localhost:3000
+}
+
+# LIFF (ลูกค้าสั่งอาหาร) — เสิร์ฟ static build ของ apps/liff/dist
+# SPA: ไม่เจอไฟล์ → คืน index.html ให้ React router จัดการ
+order.jivecode.click {
+	root * /var/www/aroihoh-liff
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}
+
+# Admin (หลังบ้านร้าน) — เสิร์ฟ static build ของ apps/admin/dist
+admin.jivecode.click {
+	root * /var/www/aroihoh-admin
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}
+
+# ── ถ้า Caddy ของคุณรันใน Docker (ไม่ใช่บน host) ──
+# localhost:3000 จะเข้าไม่ถึง container api — ให้เปลี่ยนเป็นต่อ network เดียวกันแล้วใช้ชื่อ service:
+#   reverse_proxy aroihoh-api:3000
+# และเพิ่ม network ร่วมใน docker-compose.prod.yml (บอกผมได้ เดี๋ยวปรับให้)
