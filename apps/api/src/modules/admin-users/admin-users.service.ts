@@ -8,6 +8,9 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAdminUserDto, UpdateAdminUserDto } from './dto/admin-user.dto';
 
+// US-45: role ที่ผูกแบรนด์ (owner/manager เห็นทุกแบรนด์อยู่แล้ว) — ต้องระบุ brandIds
+const BRAND_SCOPED = new Set(['staff', 'kitchen', 'chat_agent']);
+
 @Injectable()
 export class AdminUsersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -34,8 +37,8 @@ export class AdminUsersService {
   async create(merchantId: string, dto: CreateAdminUserDto) {
     const dup = await this.prisma.adminUser.findUnique({ where: { email: dto.email } });
     if (dup) throw new ConflictException('อีเมลนี้ถูกใช้แล้ว');
-    if (dto.role === 'staff' && !dto.brandIds?.length) {
-      throw new BadRequestException('staff ต้องระบุแบรนด์ที่ดูแลอย่างน้อย 1 แบรนด์');
+    if (BRAND_SCOPED.has(dto.role) && !dto.brandIds?.length) {
+      throw new BadRequestException('role นี้ต้องระบุแบรนด์ที่ดูแลอย่างน้อย 1 แบรนด์');
     }
     await this.assertBrandsInMerchant(merchantId, dto.brandIds);
 
@@ -48,7 +51,7 @@ export class AdminUsersService {
         name: dto.name,
         role: dto.role,
         adminBrands:
-          dto.role === 'staff' && dto.brandIds
+          BRAND_SCOPED.has(dto.role) && dto.brandIds
             ? { create: dto.brandIds.map((brandId) => ({ brandId })) }
             : undefined,
       },

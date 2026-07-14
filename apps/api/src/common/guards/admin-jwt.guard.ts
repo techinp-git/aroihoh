@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 
-export type AdminRole = 'owner' | 'manager' | 'staff';
+export type AdminRole = 'owner' | 'manager' | 'staff' | 'kitchen' | 'chat_agent';
 
 export interface AdminJwt {
   sub: string; // adminUserId

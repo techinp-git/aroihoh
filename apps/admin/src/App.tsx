@@ -20,16 +20,18 @@ import Settings from './views/Settings';
 
 type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'users' | 'settings';
 
-const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean; notStaff?: boolean }[] = [
-  { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠' },
-  { key: 'orders', label: 'ออเดอร์', ic: '🧾' },
-  { key: 'kitchen', label: 'ครัว (KDS)', ic: '🍳' },
-  { key: 'chat', label: 'แชต', ic: '💬' },
-  { key: 'broadcast', label: 'ส่งข่าวสาร', ic: '📣', notStaff: true },
-  { key: 'menu', label: 'เมนู', ic: '🍜' },
-  { key: 'customers', label: 'ลูกค้า', ic: '👤' },
-  { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', ownerOnly: true },
-  { key: 'settings', label: 'ตั้งค่า', ic: '⚙️' },
+// US-45: แต่ละเมนูโชว์เฉพาะ role ที่ระบุ (kitchen เห็นแค่ KDS, chat_agent เห็นแค่แชต)
+type Role = 'owner' | 'manager' | 'staff' | 'kitchen' | 'chat_agent';
+const NAV: { key: View; label: string; ic: string; roles: Role[] }[] = [
+  { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠', roles: ['owner', 'manager', 'staff'] },
+  { key: 'orders', label: 'ออเดอร์', ic: '🧾', roles: ['owner', 'manager', 'staff'] },
+  { key: 'kitchen', label: 'ครัว (KDS)', ic: '🍳', roles: ['owner', 'manager', 'staff', 'kitchen'] },
+  { key: 'chat', label: 'แชต', ic: '💬', roles: ['owner', 'manager', 'staff', 'chat_agent'] },
+  { key: 'broadcast', label: 'ส่งข่าวสาร', ic: '📣', roles: ['owner', 'manager'] },
+  { key: 'menu', label: 'เมนู', ic: '🍜', roles: ['owner', 'manager', 'staff'] },
+  { key: 'customers', label: 'ลูกค้า', ic: '👤', roles: ['owner', 'manager', 'staff'] },
+  { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', roles: ['owner'] },
+  { key: 'settings', label: 'ตั้งค่า', ic: '⚙️', roles: ['owner', 'manager'] },
 ];
 
 const TITLES: Record<View, { title: string; sub: string }> = {
@@ -124,12 +126,11 @@ export default function App() {
     return <Login onSuccess={setProfile} />;
   }
 
-  const nav = NAV.filter(
-    (n) =>
-      (!n.ownerOnly || profile.role === 'owner') &&
-      (!n.notStaff || profile.role !== 'staff'),
-  );
-  const t = TITLES[view];
+  const nav = NAV.filter((n) => n.roles.includes(profile.role as Role));
+  // US-45: ถ้า view ปัจจุบันไม่อยู่ในสิทธิ์ (เช่น kitchen role) → เด้งไปเมนูแรกที่เห็น
+  const activeView = nav.some((n) => n.key === view) ? view : nav[0]?.key;
+  if (activeView && activeView !== view) setView(activeView);
+  const t = TITLES[activeView || view];
 
   return (
     <div className="app-shell">

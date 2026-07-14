@@ -1,10 +1,14 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
 
-@UseGuards(AdminJwtGuard)
+// US-45: ยอดขาย/รายงาน — kitchen/chat_agent เข้าไม่ได้
+@UseGuards(AdminJwtGuard, RolesGuard)
+@Roles('owner', 'manager', 'staff')
 @Controller('admin/reports')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}

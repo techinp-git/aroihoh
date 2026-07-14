@@ -263,6 +263,18 @@ async function main() {
   const idorPaid = await req('PATCH', `/admin/orders/${order.id}/mark-paid?brandId=${newBrandId}`, { token: adminToken });
   ok(idorPaid.status === 404 || idorPaid.status === 403, 'IDOR: mark-paid order ข้ามแบรนด์ ถูกปฏิเสธ', `ได้ ${idorPaid.status}`);
 
+  // US-45: role kitchen — เข้า KDS ได้ แต่ customers(PII)/reports/chat ไม่ได้ (403)
+  const kEmail = `kitchen-${uuid()}@e2e.local`;
+  const mkKitchen = await req('POST', '/admin/users', { token: adminToken, body: { email: kEmail, password: 'kitchen12', name: 'ครัว e2e', role: 'kitchen', brandIds: [brandId] } });
+  ok(is2xx(mkKitchen.status) && mkKitchen.body?.role === 'kitchen', 'สร้าง user role=kitchen (ผูกแบรนด์)');
+  const kLogin = await req('POST', '/admin/auth/login', { body: { email: kEmail, password: 'kitchen12' } });
+  const kTok = kLogin.body?.token;
+  ok(!!kTok, 'kitchen login');
+  ok((await req('GET', '/admin/kitchen/orders', { token: kTok })).status === 200, 'kitchen เข้า KDS ได้ (200)');
+  ok((await req('GET', `/admin/customers?brandId=${brandId}`, { token: kTok })).status === 403, 'kitchen เข้า customers PII → 403');
+  ok((await req('GET', `/admin/reports/daily?brandId=${brandId}`, { token: kTok })).status === 403, 'kitchen เข้า reports → 403');
+  ok((await req('GET', '/admin/chat/conversations', { token: kTok })).status === 403, 'kitchen เข้า chat → 403');
+
   // 14) status transition ไล่ลำดับ + กันถอยหลัง
   const toConfirmed = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, {
     token: adminToken,

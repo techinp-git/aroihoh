@@ -3,6 +3,8 @@ import { IsBoolean } from 'class-validator';
 import { CustomersService } from './customers.service';
 import { SetTagsDto } from './dto/set-tags.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
 
@@ -10,7 +12,9 @@ class SetOptOutDto {
   @IsBoolean() optedOut: boolean;
 }
 
-@UseGuards(AdminJwtGuard)
+// US-45: PII ลูกค้า — kitchen/chat_agent เข้าไม่ได้
+@UseGuards(AdminJwtGuard, RolesGuard)
+@Roles('owner', 'manager', 'staff')
 @Controller('admin/customers')
 export class CustomersController {
   constructor(private readonly customers: CustomersService) {}

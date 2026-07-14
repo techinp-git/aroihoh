@@ -10,11 +10,15 @@ import {
 import type { OrderStatus } from '@aroihoh/shared';
 import { OrdersService } from './orders.service';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
 import { UpdateOrderStatusDto } from './dto/update-status.dto';
 
-@UseGuards(AdminJwtGuard)
+// US-45: kitchen เข้าได้ (ดู+ไล่สถานะออเดอร์) — chat_agent เข้าไม่ได้
+@UseGuards(AdminJwtGuard, RolesGuard)
+@Roles('owner', 'manager', 'staff', 'kitchen')
 @Controller('admin/orders')
 export class AdminOrdersController {
   constructor(private readonly orders: OrdersService) {}

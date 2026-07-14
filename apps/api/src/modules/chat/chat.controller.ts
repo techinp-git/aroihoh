@@ -10,10 +10,14 @@ import {
 import { ChatService } from './chat.service';
 import { SendChatDto } from './dto/send-chat.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
 
-@UseGuards(AdminJwtGuard)
+// US-45: chat_agent เข้าได้ (+ role ทั่วไป) — kitchen เข้าไม่ได้
+@UseGuards(AdminJwtGuard, RolesGuard)
+@Roles('owner', 'manager', 'staff', 'chat_agent')
 @Controller('admin/chat')
 export class ChatController {
   constructor(private readonly chat: ChatService) {}

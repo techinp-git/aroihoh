@@ -8,7 +8,9 @@ import {
   type Brand,
 } from '../api';
 
-const ROLES = ['owner', 'manager', 'staff'];
+const ROLES = ['owner', 'manager', 'staff', 'kitchen', 'chat_agent'];
+// role ที่ผูกแบรนด์ (ต้องเลือกแบรนด์อย่างน้อย 1) — owner/manager เห็นทุกแบรนด์
+const BRAND_SCOPED = ['staff', 'kitchen', 'chat_agent'];
 
 export default function Users({ brands, selfId }: { brands: Brand[]; selfId: string }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -38,7 +40,7 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
   const submit = async () => {
     setError('');
     if (f.password.length < 8) return setError('รหัสผ่านอย่างน้อย 8 ตัวอักษร');
-    if (f.role === 'staff' && f.brandIds.length === 0) return setError('staff ต้องเลือกแบรนด์อย่างน้อย 1');
+    if (BRAND_SCOPED.includes(f.role) && f.brandIds.length === 0) return setError('role นี้ต้องเลือกแบรนด์อย่างน้อย 1');
     setBusy('new');
     try {
       await createAdminUser({
@@ -46,7 +48,7 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
         password: f.password,
         name: f.name,
         role: f.role,
-        brandIds: f.role === 'staff' ? f.brandIds : undefined,
+        brandIds: BRAND_SCOPED.includes(f.role) ? f.brandIds : undefined,
       });
       setF({ email: '', password: '', name: '', role: 'staff', brandIds: [] });
       setShowForm(false);
@@ -113,7 +115,7 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
               </select>
             </label>
           </div>
-          {f.role === 'staff' && (
+          {BRAND_SCOPED.includes(f.role) && (
             <div className="field">
               <span>แบรนด์ที่ดูแล</span>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>

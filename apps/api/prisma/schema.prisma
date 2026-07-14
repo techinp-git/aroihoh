@@ -460,6 +460,8 @@ enum AdminRole {
   owner
   manager
   staff
+  kitchen // US-45: เห็นเฉพาะจอครัว (KDS) + ไล่สถานะออเดอร์
+  chat_agent // US-45: เห็นเฉพาะแชต
 }
 
 model AdminUser {

@@ -9,7 +9,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-const ROLES = ['owner', 'manager', 'staff'] as const;
+const ROLES = ['owner', 'manager', 'staff', 'kitchen', 'chat_agent'] as const;
 
 export class CreateAdminUserDto {
   @IsEmail() email: string;

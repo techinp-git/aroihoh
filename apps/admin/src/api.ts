@@ -10,7 +10,7 @@ export interface AdminProfile {
   id: string;
   name: string;
   email: string;
-  role: 'owner' | 'manager' | 'staff';
+  role: 'owner' | 'manager' | 'staff' | 'kitchen' | 'chat_agent';
   brandIds: string[];
 }
 
@@ -423,6 +423,8 @@ export const ROLE_TH: Record<string, string> = {
   owner: 'เจ้าของ',
   manager: 'ผู้จัดการ',
   staff: 'พนักงาน',
+  kitchen: 'ครัว (KDS)',
+  chat_agent: 'แชต',
 };
 
 export const ALL_STATUSES = [...ORDER_STATUS_FLOW, 'cancelled'];
