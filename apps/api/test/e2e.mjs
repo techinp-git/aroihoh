@@ -275,6 +275,15 @@ async function main() {
   ok((await req('GET', `/admin/reports/daily?brandId=${brandId}`, { token: kTok })).status === 403, 'kitchen เข้า reports → 403');
   ok((await req('GET', '/admin/chat/conversations', { token: kTok })).status === 403, 'kitchen เข้า chat → 403');
 
+  // US-46: chat presence — 2 แอดมิน heartbeat ห้องเดียวกัน ต้องเห็นกัน (กันตอบชนกัน)
+  const caEmail = `agent-${uuid()}@e2e.local`;
+  await req('POST', '/admin/users', { token: adminToken, body: { email: caEmail, password: 'agent123', name: 'เอเจนต์', role: 'chat_agent', brandIds: [brandId] } });
+  const caTok = (await req('POST', '/admin/auth/login', { body: { email: caEmail, password: 'agent123' } })).body?.token;
+  const pcust = 'presence-e2e-cust';
+  await req('POST', `/admin/chat/${pcust}/presence?brandId=${brandId}`, { token: adminToken, body: { name: 'เจ้าของ' } });
+  const caView = await req('POST', `/admin/chat/${pcust}/presence?brandId=${brandId}`, { token: caTok, body: { name: 'เอเจนต์' } });
+  ok(is2xx(caView.status) && (caView.body?.viewers || []).includes('เจ้าของ'), 'presence: แอดมินคนที่ 2 เห็นคนแรกกำลังดูห้องเดียวกัน', JSON.stringify(caView.body));
+
   // 14) status transition ไล่ลำดับ + กันถอยหลัง
   const toConfirmed = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, {
     token: adminToken,

@@ -299,6 +299,13 @@ export const sendChat = (brandId: string, customerId: string, text: string) =>
     body: JSON.stringify({ text }),
   });
 
+// US-46: heartbeat presence — คืนชื่อคนอื่นที่กำลังดูห้องนี้
+export const chatPresence = (brandId: string, customerId: string, name: string) =>
+  adminFetch<{ viewers: string[] }>(
+    `/admin/chat/${customerId}/presence?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'POST', body: JSON.stringify({ name }) },
+  );
+
 // ── Broadcast (US-18) ──
 export interface Broadcast {
   id: string; message: string; segment: { tags?: string[] } | null;

@@ -5,6 +5,8 @@ import {
   sendChat,
   getCustomer,
   updateCustomerTags,
+  chatPresence,
+  getAdminProfile,
   baht,
   STATUS_TH,
   type ChatConversation,
@@ -53,7 +55,9 @@ export default function Chat() {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  const [viewers, setViewers] = useState<string[]>([]); // US-46: คนอื่นที่กำลังดูห้องนี้
   const bottomRef = useRef<HTMLDivElement>(null);
+  const myName = getAdminProfile()?.name || 'แอดมิน';
 
   const loadConvs = useCallback(async () => {
     setError('');
@@ -99,6 +103,25 @@ export default function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [thread]);
+
+  // US-46: heartbeat presence ทุก 8s ระหว่างเปิดห้อง → โชว์คนอื่นที่กำลังดู
+  useEffect(() => {
+    if (!selected) {
+      setViewers([]);
+      return;
+    }
+    let alive = true;
+    const beat = () =>
+      chatPresence(selected.brandId, selected.customerId, myName)
+        .then((r) => alive && setViewers(r.viewers))
+        .catch(() => {});
+    beat();
+    const t = setInterval(beat, 8000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [selected, myName]);
 
   const send = async () => {
     const t = text.trim();
@@ -192,6 +215,11 @@ export default function Chat() {
                 <div className="sub">
                   คุยผ่าน OA: {thread.customer.brand.name} · LINE: {thread.customer.lineUserId}
                 </div>
+                {viewers.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#c0392b', fontWeight: 600, marginTop: 2 }}>
+                    👁 {viewers.join(', ')} กำลังดูห้องนี้อยู่
+                  </div>
+                )}
               </div>
               <div className="bubbles">
                 {thread.messages.map((m) => (
