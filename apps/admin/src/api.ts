@@ -211,6 +211,15 @@ export const dailyReport = (brandId: string, date?: string) =>
     `/admin/reports/daily?brandId=${encodeURIComponent(brandId)}` + (date ? `&date=${date}` : ''),
   );
 
+// US-38: สรุปรวมทุกแบรนด์ (owner/manager)
+export interface MerchantDaily {
+  date: string;
+  total: DailyReport;
+  brands: (DailyReport & { brandId: string; brandName: string })[];
+}
+export const merchantDailyReport = (date?: string) =>
+  adminFetch<MerchantDaily>('/admin/reports/merchant-daily' + (date ? `?date=${date}` : ''));
+
 export const markPaid = (brandId: string, orderId: string) =>
   adminFetch<{ paymentStatus: string; alreadyPaid: boolean }>(
     `/admin/orders/${orderId}/mark-paid?brandId=${encodeURIComponent(brandId)}`,

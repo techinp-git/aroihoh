@@ -149,6 +149,10 @@ async function main() {
   });
   ok(is2xx(kUpd.status), 'PATCH /admin/kitchens แก้รัศมี+ค่าส่ง');
 
+  // US-38: dashboard รวม merchant — total + แยกต่อแบรนด์ (โครงสร้างถูก)
+  const mDaily = await req('GET', '/admin/reports/merchant-daily', { token: adminToken });
+  ok(is2xx(mDaily.status) && mDaily.body?.total && Array.isArray(mDaily.body?.brands), 'GET merchant-daily (total + brands[])');
+
   // 4) เมนู (เอา menuItemId สำหรับสร้างออเดอร์)
   const menu = await req('GET', `/admin/menu?brandId=${brandId}`, { token: adminToken });
   ok(menu.status === 200 && menu.body?.length > 0, 'GET /admin/menu มีเมนู');

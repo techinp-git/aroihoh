@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import {
   listOrders,
   dailyReport,
+  merchantDailyReport,
   baht,
   STATUS_TH,
   ACTIVE_STATUSES,
   type Order,
   type DailyReport,
+  type MerchantDaily,
 } from '../api';
+import BrandChip from '../components/BrandChip';
 
 // วันที่วันนี้ตามเขตกรุงเทพ (YYYY-MM-DD) สำหรับ default + ค่าสูงสุดของ date picker
 const todayBangkok = () =>
@@ -16,6 +19,7 @@ const todayBangkok = () =>
 export default function Dashboard({ brandId }: { brandId: string }) {
   const [report, setReport] = useState<DailyReport | null>(null);
   const [recent, setRecent] = useState<Order[]>([]);
+  const [merchant, setMerchant] = useState<MerchantDaily | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [date, setDate] = useState(todayBangkok());
@@ -38,6 +42,17 @@ export default function Dashboard({ brandId }: { brandId: string }) {
       alive = false;
     };
   }, [brandId, date]);
+
+  // US-38: สรุปรวมทุกแบรนด์ (แสดงเมื่อมี >1 แบรนด์ที่มีออเดอร์วันนั้น)
+  useEffect(() => {
+    let alive = true;
+    merchantDailyReport(date)
+      .then((m) => alive && setMerchant(m))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [date]);
 
   const active = report
     ? Object.entries(report.byStatus)
@@ -82,8 +97,37 @@ export default function Dashboard({ brandId }: { brandId: string }) {
         </div>
       </section>
 
+      {/* US-38: สรุปรวมทุกแบรนด์ (merchant) — โชว์เมื่อมี >1 แบรนด์ที่มีออเดอร์ */}
+      {merchant && merchant.brands.length > 1 && (
+        <>
+          <div className="section-head">
+            <h2>รวมทุกแบรนด์ ({merchant.brands.length}) — {baht(merchant.total.revenue)} · {merchant.total.count} ออเดอร์</h2>
+          </div>
+          <div className="card" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr><th>แบรนด์</th><th>ออเดอร์</th><th>ส่งสำเร็จ</th><th>ยกเลิก</th><th>ยอดขาย</th></tr>
+                </thead>
+                <tbody>
+                  {merchant.brands.map((b) => (
+                    <tr key={b.brandId}>
+                      <td><BrandChip name={b.brandName} /></td>
+                      <td>{b.count}</td>
+                      <td>{b.completed}</td>
+                      <td>{b.cancelled}</td>
+                      <td className="total">{baht(b.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="section-head">
-        <h2>ออเดอร์ล่าสุด</h2>
+        <h2>ออเดอร์ล่าสุด (แบรนด์ที่เลือก)</h2>
       </div>
       <div className="card">
         <div className="table-wrap">

@@ -19,4 +19,10 @@ export class ReportsController {
     assertBrandAccess(admin, brandId);
     return this.reports.dailySummary(brandId, date);
   }
+
+  // US-38: สรุปรวมทุกแบรนด์ที่ admin มีสิทธิ์ (ไม่รับ brandId) — dashboard ระดับ merchant
+  @Get('merchant-daily')
+  merchantDaily(@CurrentAdmin() admin: AdminJwt, @Query('date') date?: string) {
+    return this.reports.merchantDaily(admin.brandIds, date);
+  }
 }
