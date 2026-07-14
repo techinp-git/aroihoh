@@ -1,9 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from './line.client';
-
-// TODO(SETUP-1/US-25): เข้ารหัส secret/token จริงก่อนเก็บ (ตอนนี้ passthrough)
-const encrypt = (v: string) => v;
+import { encryptSecret as encrypt } from '../../common/crypto'; // SEC-1: AES-256-GCM at-rest
 
 @Injectable()
 export class LineConfigService {

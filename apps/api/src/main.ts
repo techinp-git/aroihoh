@@ -1,9 +1,16 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { encryptionKeyConfigured } from './common/crypto';
 
 async function bootstrap() {
+  // SEC-1: prod ต้องตั้ง ENCRYPTION_KEY ไม่งั้น LINE secret/token ถูกเก็บ plaintext
+  if (process.env.NODE_ENV === 'production' && !encryptionKeyConfigured()) {
+    new Logger('Bootstrap').error(
+      '⚠️ ENCRYPTION_KEY ไม่ได้ตั้งใน production — LINE secret/token จะถูกเก็บแบบ plaintext! ตั้งด้วย `openssl rand -hex 32`',
+    );
+  }
   // rawBody: true → เก็บ Buffer ดิบไว้ที่ req.rawBody สำหรับ verify x-line-signature (กติกาเหล็ก #3)
   const app = await NestFactory.create(AppModule, { rawBody: true });
   app.setGlobalPrefix('api');

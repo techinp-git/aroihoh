@@ -1,13 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { decryptSecret as decrypt } from '../../common/crypto'; // SEC-1: AES-256-GCM at-rest
 
 export interface LineConfig {
   channelSecret: string | null;
   channelAccessToken: string | null;
 }
-
-// TODO(SETUP-1): เปลี่ยนเป็น decrypt จริง (secret/token เก็บเข้ารหัสตาม US-25)
-const decrypt = (v: string | null) => v;
 
 @Injectable()
 export class LineClient {
