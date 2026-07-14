@@ -26,6 +26,11 @@ export class MenuController {
   constructor(private readonly menu: MenuService) {}
 
   // ── Public (LIFF) ──
+  @Get('brand/:brandId')
+  getPublicBrand(@Param('brandId') brandId: string) {
+    return this.menu.getPublicBrand(brandId);
+  }
+
   @Get('menu/:brandId')
   getPublicMenu(@Param('brandId') brandId: string) {
     return this.menu.getPublicMenu(brandId);

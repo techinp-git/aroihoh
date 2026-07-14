@@ -69,9 +69,10 @@ export async function login(email: string, password: string) {
 }
 
 // ── Types ──
+export interface BrandTheme { primaryColor?: string }
 export interface Brand {
   id: string; name: string; slug: string; isActive: boolean; codEnabled?: boolean;
-  logoUrl?: string | null; brandKitchens?: { kitchenId: string }[];
+  logoUrl?: string | null; theme?: BrandTheme | null; brandKitchens?: { kitchenId: string }[];
 }
 export interface Kitchen {
   id: string; name: string; isOpen: boolean;
@@ -129,7 +130,7 @@ export async function createBrand(input: {
 
 export const updateBrand = (
   id: string,
-  input: { name?: string; logoUrl?: string; isActive?: boolean; kitchenIds?: string[] },
+  input: { name?: string; logoUrl?: string; isActive?: boolean; kitchenIds?: string[]; theme?: BrandTheme },
 ) => adminFetch<Brand>(`/admin/brands/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 
 export const listOrders = (brandId: string, status?: string) =>

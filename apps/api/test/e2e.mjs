@@ -153,6 +153,11 @@ async function main() {
   const mDaily = await req('GET', '/admin/reports/merchant-daily', { token: adminToken });
   ok(is2xx(mDaily.status) && mDaily.body?.total && Array.isArray(mDaily.body?.brands), 'GET merchant-daily (total + brands[])');
 
+  // US-39: public brand info (LIFF ธีม) — ไม่ต้อง auth · ตั้งธีมแล้วอ่านคืนได้
+  await req('PATCH', `/admin/brands/${brandId}`, { token: adminToken, body: { theme: { primaryColor: '#123456' } } });
+  const pubBrand = await req('GET', `/brand/${brandId}`);
+  ok(pubBrand.status === 200 && pubBrand.body?.name && pubBrand.body?.theme?.primaryColor === '#123456', 'GET /brand/:id (public) คืนชื่อ+ธีม');
+
   // 4) เมนู (เอา menuItemId สำหรับสร้างออเดอร์)
   const menu = await req('GET', `/admin/menu?brandId=${brandId}`, { token: adminToken });
   ok(menu.status === 200 && menu.body?.length > 0, 'GET /admin/menu มีเมนู');

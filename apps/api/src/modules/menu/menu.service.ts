@@ -10,6 +10,16 @@ import {
 export class MenuService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** US-39: ข้อมูลแบรนด์สาธารณะสำหรับ LIFF (ชื่อ/โลโก้/ธีม) — เฉพาะแบรนด์ที่ active */
+  async getPublicBrand(brandId: string) {
+    const brand = await this.prisma.brand.findFirst({
+      where: { id: brandId, isActive: true },
+      select: { id: true, name: true, logoUrl: true, theme: true },
+    });
+    if (!brand) throw new NotFoundException('brand not found');
+    return brand;
+  }
+
   /** LIFF: เมนูที่เปิดขาย จัดกลุ่มตามหมวด (US-02 ใช้เลือกใส่ตะกร้า) */
   async getPublicMenu(brandId: string) {
     const categories = await this.prisma.menuCategory.findMany({

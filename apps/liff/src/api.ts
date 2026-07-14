@@ -59,6 +59,10 @@ export const lineLogin = (idToken: string) =>
     false,
   );
 
+// US-39: ข้อมูลแบรนด์สำหรับธีม LIFF (ชื่อ/โลโก้/สีหลัก)
+export interface BrandInfo { id: string; name: string; logoUrl: string | null; theme: { primaryColor?: string } | null; }
+export const getBrand = () => api<BrandInfo>(`/brand/${BRAND_ID}`, {}, false);
+
 export const getMenu = () => api<MenuCategory[]>(`/menu/${BRAND_ID}`, {}, false);
 
 export const checkDelivery = (lat: number, lng: number) =>

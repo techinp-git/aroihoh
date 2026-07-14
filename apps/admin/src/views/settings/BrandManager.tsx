@@ -28,6 +28,31 @@ export default function BrandManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // US-39: แก้ธีมต่อแบรนด์ (โลโก้ + สีหลัก) — สะท้อนใน LIFF
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLogo, setEditLogo] = useState('');
+  const [editColor, setEditColor] = useState('#e8734a');
+  const openTheme = (b: Brand) => {
+    setEditId(b.id);
+    setEditLogo(b.logoUrl || '');
+    setEditColor(b.theme?.primaryColor || '#e8734a');
+    setError('');
+  };
+  const saveTheme = async () => {
+    if (!editId) return;
+    setBusy(true);
+    setError('');
+    try {
+      await updateBrand(editId, { logoUrl: editLogo.trim(), theme: { primaryColor: editColor } });
+      setEditId(null);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadKitchens = useCallback(async () => {
     try {
       setKitchens(await listKitchens());
@@ -93,19 +118,34 @@ export default function BrandManager({
       {/* รายการแบรนด์ */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {brands.map((b) => (
-          <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid #eee', borderRadius: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 500 }}>{b.name} <span style={{ color: '#999', fontSize: 12 }}>/{b.slug}</span></div>
-              <div style={{ fontSize: 12, color: '#888' }}>
-                ครัว: {(b.brandKitchens || []).map((bk) => kitchenName(bk.kitchenId)).join(', ') || '—'}
+          <div key={b.id} style={{ border: '1px solid #eee', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: b.theme?.primaryColor || '#ccc', flex: '0 0 auto' }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{b.name} <span style={{ color: '#999', fontSize: 12 }}>/{b.slug}</span></div>
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  ครัว: {(b.brandKitchens || []).map((bk) => kitchenName(bk.kitchenId)).join(', ') || '—'}
+                </div>
               </div>
+              <span className={`pill ${b.isActive ? 'on' : 'off'}`} style={{ fontSize: 11 }}>{b.isActive ? 'เปิด' : 'ปิด'}</span>
+              <button className="btn" style={{ fontSize: 12 }} onClick={() => (editId === b.id ? setEditId(null) : openTheme(b))} disabled={busy}>🎨 ธีม</button>
+              <button className="btn" style={{ fontSize: 12 }} onClick={() => toggleActive(b)} disabled={busy}>{b.isActive ? 'ปิด' : 'เปิด'}</button>
             </div>
-            <span className={`pill ${b.isActive ? 'on' : 'off'}`} style={{ fontSize: 11 }}>
-              {b.isActive ? 'เปิด' : 'ปิด'}
-            </span>
-            <button className="btn" style={{ fontSize: 12 }} onClick={() => toggleActive(b)} disabled={busy}>
-              {b.isActive ? 'ปิด' : 'เปิด'}
-            </button>
+            {editId === b.id && (
+              <div style={{ padding: '10px', borderTop: '1px solid #eee', display: 'grid', gap: 8, background: '#fafafa' }}>
+                <label style={{ fontSize: 13 }}>URL โลโก้ (ไม่บังคับ)
+                  <input value={editLogo} onChange={(e) => setEditLogo(e.target.value)} placeholder="https://…/logo.png" style={{ width: '100%', marginTop: 4 }} />
+                </label>
+                <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>สีหลักแบรนด์ (หัวเว็บ LIFF)
+                  <input type="color" value={editColor} onChange={(e) => setEditColor(e.target.value)} style={{ width: 44, height: 28, padding: 0, border: 'none', background: 'none' }} />
+                  <span style={{ fontSize: 12, color: '#888' }}>{editColor}</span>
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn primary" style={{ fontSize: 12 }} onClick={saveTheme} disabled={busy}>{busy ? <span className="spinner" /> : 'บันทึกธีม'}</button>
+                  <button className="btn" style={{ fontSize: 12 }} onClick={() => setEditId(null)} disabled={busy}>ยกเลิก</button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -12,6 +12,7 @@ import {
 import {
   IsArray,
   IsBoolean,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -42,6 +43,7 @@ class UpdateBrandDto {
   @IsOptional() @IsString() @MaxLength(500) logoUrl?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) kitchenIds?: string[];
+  @IsOptional() @IsObject() theme?: Record<string, unknown>; // US-39: { primaryColor?: string }
 }
 
 const BRAND_SELECT = {
@@ -51,6 +53,7 @@ const BRAND_SELECT = {
   isActive: true,
   codEnabled: true,
   logoUrl: true,
+  theme: true,
 } as const;
 
 @UseGuards(AdminJwtGuard)
@@ -121,6 +124,7 @@ export class BrandsController {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.theme !== undefined ? { theme: dto.theme as any } : {}),
         ...(dto.kitchenIds
           ? {
               brandKitchens: {

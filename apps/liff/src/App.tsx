@@ -7,6 +7,7 @@ import {
   devLogin,
   lineLogin,
   getMenu,
+  getBrand,
   checkDelivery,
   createOrder,
   getOrder,
@@ -15,6 +16,7 @@ import {
   type MenuItem,
   type DeliveryCheck,
   type OrderResult,
+  type BrandInfo,
 } from './api';
 
 type View = 'boot' | 'error' | 'menu' | 'cart' | 'checkout' | 'done' | 'track';
@@ -35,6 +37,7 @@ export default function App() {
   const [view, setView] = useState<View>('boot');
   const [error, setError] = useState('');
   const [menu, setMenu] = useState<MenuCategory[]>([]);
+  const [brand, setBrand] = useState<BrandInfo | null>(null);
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [note, setNote] = useState('');
 
@@ -63,7 +66,16 @@ export default function App() {
           const r = await devLogin(); // dev: ไม่ต้องมี LINE
           setToken(r.accessToken);
         }
-        setMenu(await getMenu());
+        // US-39: โหลดเมนู + ธีมแบรนด์ พร้อมกัน แล้วทาสีหัวเว็บ/ชื่อตามแบรนด์
+        const [m, b] = await Promise.all([getMenu(), getBrand().catch(() => null)]);
+        setMenu(m);
+        if (b) {
+          setBrand(b);
+          document.title = b.name;
+          if (b.theme?.primaryColor) {
+            document.documentElement.style.setProperty('--brand-primary', b.theme.primaryColor);
+          }
+        }
         setView('menu');
       } catch (e) {
         setError((e as Error).message);
@@ -147,7 +159,8 @@ export default function App() {
   return (
     <div className="app">
       <Header
-        title="ชิมชีวา One Price 60"
+        title={brand?.name || 'ชิมชีวา One Price 60'}
+        logoUrl={brand?.logoUrl || undefined}
         sub={view === 'menu' ? 'เลือกเมนู' : undefined}
         onBack={view === 'cart' ? () => setView('menu') : view === 'checkout' ? () => setView('cart') : undefined}
       />
@@ -315,10 +328,17 @@ export default function App() {
   );
 }
 
-function Header({ title, sub, onBack }: { title: string; sub?: string; onBack?: () => void }) {
+function Header({ title, sub, onBack, logoUrl }: { title: string; sub?: string; onBack?: () => void; logoUrl?: string }) {
   return (
-    <div className="hdr">
-      {onBack ? <button className="back" onClick={onBack}>‹ กลับ</button> : <span className="logo">🍚</span>}
+    // US-39: หัวเว็บใช้สีหลักแบรนด์ (--brand-primary) + โลโก้แบรนด์ถ้ามี
+    <div className="hdr" style={{ background: 'var(--brand-primary, #e8734a)' }}>
+      {onBack ? (
+        <button className="back" onClick={onBack}>‹ กลับ</button>
+      ) : logoUrl ? (
+        <img src={logoUrl} alt="" className="logo" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+      ) : (
+        <span className="logo">🍚</span>
+      )}
       <div>
         <h1>{title}</h1>
         {sub && <div className="sub">{sub}</div>}
