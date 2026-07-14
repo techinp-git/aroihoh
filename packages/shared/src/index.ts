@@ -6,9 +6,10 @@
 /** ลำดับสถานะออเดอร์ (US-12: เปลี่ยนสถานะต้องไล่ตามลำดับ) */
 export const ORDER_STATUS_FLOW = [
   'pending', // รอยืนยัน/รอชำระ
-  'confirmed', // ร้านรับออเดอร์
+  'confirmed', // ร้านรับออเดอร์ (US-42: พิมพ์ใบครัว)
   'preparing', // กำลังทำ
-  'delivering', // ออกส่ง
+  'ready', // US-41: ครัวจัดเสร็จ รอไรเดอร์ (US-43: พิมพ์ label)
+  'delivering', // ออกส่ง (ไรเดอร์รับแล้ว)
   'completed', // ส่งสำเร็จ
 ] as const;
 

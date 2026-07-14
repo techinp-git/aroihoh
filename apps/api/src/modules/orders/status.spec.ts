@@ -3,7 +3,8 @@ import { canTransition, isTerminal, nextStatus } from './status';
 describe('order status machine', () => {
   it('nextStatus เดินตามลำดับ', () => {
     expect(nextStatus('pending')).toBe('confirmed');
-    expect(nextStatus('preparing')).toBe('delivering');
+    expect(nextStatus('preparing')).toBe('ready'); // US-41: แทรก ready ก่อน delivering
+    expect(nextStatus('ready')).toBe('delivering');
     expect(nextStatus('delivering')).toBe('completed');
     expect(nextStatus('completed')).toBeNull();
     expect(nextStatus('cancelled')).toBeNull();

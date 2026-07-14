@@ -162,6 +162,20 @@ export class OrdersService {
     });
   }
 
+  // US-37: จอครัว (KDS) — ออเดอร์ active ข้ามทุกแบรนด์ที่ admin คุม (order.kitchenId มีอยู่แล้ว)
+  // เรียงเก่าสุดก่อน (ครัวทำตามคิว) + ติดชื่อแบรนด์ให้โชว์ป้าย
+  listForKitchen(brandIds: string[]) {
+    if (brandIds.length === 0) return [];
+    return this.prisma.order.findMany({
+      where: {
+        brandId: { in: brandIds },
+        status: { in: ['pending', 'confirmed', 'preparing', 'ready'] },
+      },
+      orderBy: { createdAt: 'asc' },
+      include: { items: true, brand: { select: { name: true } } },
+    });
+  }
+
   /**
    * US-12: เปลี่ยนสถานะออเดอร์ (แอดมิน)
    *  - ไล่ลำดับเท่านั้น (canTransition) → 409 ถ้าเปลี่ยนข้ามขั้น/ถอยหลัง/ออกจาก terminal

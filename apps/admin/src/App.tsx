@@ -10,6 +10,7 @@ import {
 } from './api';
 import Dashboard from './views/Dashboard';
 import Orders from './views/Orders';
+import Kitchen from './views/Kitchen';
 import Menu from './views/Menu';
 import Customers from './views/Customers';
 import Chat from './views/Chat';
@@ -17,11 +18,12 @@ import Broadcast from './views/Broadcast';
 import Users from './views/Users';
 import Settings from './views/Settings';
 
-type View = 'dashboard' | 'orders' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'users' | 'settings';
+type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'users' | 'settings';
 
 const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean; notStaff?: boolean }[] = [
   { key: 'dashboard', label: 'แดชบอร์ด', ic: '🏠' },
   { key: 'orders', label: 'ออเดอร์', ic: '🧾' },
+  { key: 'kitchen', label: 'ครัว (KDS)', ic: '🍳' },
   { key: 'chat', label: 'แชต', ic: '💬' },
   { key: 'broadcast', label: 'ส่งข่าวสาร', ic: '📣', notStaff: true },
   { key: 'menu', label: 'เมนู', ic: '🍜' },
@@ -33,6 +35,7 @@ const NAV: { key: View; label: string; ic: string; ownerOnly?: boolean; notStaff
 const TITLES: Record<View, { title: string; sub: string }> = {
   dashboard: { title: 'แดชบอร์ด', sub: 'ภาพรวมออเดอร์และยอดขาย' },
   orders: { title: 'จัดการออเดอร์', sub: 'ไล่สถานะ / ยกเลิก (EP-04)' },
+  kitchen: { title: 'จอครัว (KDS)', sub: 'คิวออเดอร์รวมทุกแบรนด์ · กดรับ/จัดเสร็จ (US-37)' },
   menu: { title: 'จัดการเมนู', sub: 'เพิ่ม/แก้ไข/ลบเมนู · หมวด · เปิด-ปิดขาย · ราคา (US-14)' },
   chat: { title: 'แชต', sub: 'ตอบลูกค้า (US-21) — ส่งเข้า LINE เมื่อเชื่อม SETUP-1' },
   broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-18)' },
@@ -179,6 +182,7 @@ export default function App() {
           )}
           {view === 'dashboard' && <Dashboard brandId={brandId} />}
           {view === 'orders' && <Orders brandId={brandId} />}
+          {view === 'kitchen' && <Kitchen />} {/* US-37: รวมทุกแบรนด์ */}
           {view === 'menu' && <Menu brandId={brandId} />}
           {view === 'chat' && <Chat />} {/* US-40: inbox เดียวรวมทุกแบรนด์ */}
           {view === 'broadcast' && <Broadcast brandId={brandId} />}

@@ -21,7 +21,7 @@ type View = 'boot' | 'error' | 'menu' | 'cart' | 'checkout' | 'done' | 'track';
 
 const STATUS_TH: Record<string, string> = {
   pending: 'รอยืนยัน', confirmed: 'ร้านรับออเดอร์', preparing: 'กำลังทำอาหาร',
-  delivering: 'กำลังจัดส่ง', completed: 'ส่งสำเร็จ', cancelled: 'ยกเลิก',
+  ready: 'จัดเสร็จ รอไรเดอร์', delivering: 'กำลังจัดส่ง', completed: 'ส่งสำเร็จ', cancelled: 'ยกเลิก',
 };
 const PRESETS = [
   { key: 'in', label: 'ในเขต (อโศก)', lat: 13.7400, lng: 100.5620 },

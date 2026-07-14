@@ -129,6 +129,15 @@ export const changeStatus = (brandId: string, orderId: string, status: string, r
     body: JSON.stringify({ status, reason }),
   });
 
+// US-37: จอครัว (KDS) — ออเดอร์ active รวมทุกแบรนด์ที่ admin มีสิทธิ์ (ติด brandId/brandName)
+export interface KitchenOrder extends Order {
+  brandId: string;
+  brand: { name: string };
+}
+export const listKitchenOrders = () => adminFetch<KitchenOrder[]>('/admin/kitchen/orders');
+export const kitchenStreamUrl = () =>
+  `${API_BASE}/admin/kitchen/stream?token=${encodeURIComponent(getAdminToken())}`;
+
 export const listMenu = (brandId: string) =>
   adminFetch<MenuItem[]>(`/admin/menu?brandId=${encodeURIComponent(brandId)}`);
 
@@ -372,6 +381,7 @@ export const STATUS_TH: Record<string, string> = {
   pending: 'รอยืนยัน',
   confirmed: 'รับออเดอร์',
   preparing: 'กำลังทำ',
+  ready: 'จัดเสร็จ รอไรเดอร์',
   delivering: 'ออกส่ง',
   completed: 'ส่งสำเร็จ',
   cancelled: 'ยกเลิก',
@@ -383,7 +393,7 @@ export const ROLE_TH: Record<string, string> = {
 };
 
 export const ALL_STATUSES = [...ORDER_STATUS_FLOW, 'cancelled'];
-export const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'preparing', 'delivering']);
+export const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'preparing', 'ready', 'delivering']);
 
 export function nextStatus(s: string): string | null {
   const i = (ORDER_STATUS_FLOW as readonly string[]).indexOf(s);

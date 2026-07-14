@@ -250,6 +250,7 @@ enum OrderStatus {
   pending
   confirmed
   preparing
+  ready // US-41: ครัวจัดเสร็จ รอไรเดอร์
   delivering
   completed
   cancelled

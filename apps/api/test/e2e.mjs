@@ -234,6 +234,19 @@ async function main() {
   });
   ok(backward.status === 409 || backward.status === 400, 'ถอยหลัง confirmed → pending ถูกปฏิเสธ', `ได้ ${backward.status}`);
 
+  // US-41: flow ครัวมีสถานะ ready (confirmed → preparing → ready → delivering)
+  const toPreparing = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, { token: adminToken, body: { status: 'preparing' } });
+  ok(toPreparing.body?.status === 'preparing', 'confirmed → preparing');
+  const toReady = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, { token: adminToken, body: { status: 'ready' } });
+  ok(toReady.status === 200 && toReady.body?.status === 'ready', 'preparing → ready (US-41: ครัวจัดเสร็จ)');
+  const skipReady = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, { token: adminToken, body: { status: 'completed' } });
+  ok(skipReady.status === 409 || skipReady.status === 400, 'ready ข้ามไป completed ถูกปฏิเสธ (ต้อง delivering ก่อน)');
+
+  // US-37: จอครัว (KDS) — GET /admin/kitchen/orders รวมทุกแบรนด์ + ติด brandName
+  const kds = await req('GET', '/admin/kitchen/orders', { token: adminToken });
+  ok(kds.status === 200 && Array.isArray(kds.body), 'GET /admin/kitchen/orders (KDS)');
+  ok(kds.body.some((o) => o.id === order.id && o.brand?.name), 'KDS มีออเดอร์ + ติด brandName · order ready อยู่ในคิว');
+
   // 15) US-16 พักรับออเดอร์ → order ใหม่ 422
   const pause = await req('PATCH', `/admin/store/pause?brandId=${brandId}`, {
     token: adminToken,
