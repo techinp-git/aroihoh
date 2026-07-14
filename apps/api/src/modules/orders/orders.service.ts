@@ -172,7 +172,13 @@ export class OrdersService {
         status: { in: ['pending', 'confirmed', 'preparing', 'ready'] },
       },
       orderBy: { createdAt: 'asc' },
-      include: { items: true, brand: { select: { name: true } } },
+      // customer/address ไว้พิมพ์ label ไรเดอร์ (US-43) — displayName + ที่อยู่ + พิกัด (ไม่คืน phoneEnc PDPA)
+      include: {
+        items: true,
+        brand: { select: { name: true } },
+        customer: { select: { displayName: true } },
+        address: { select: { detail: true, lat: true, lng: true } },
+      },
     });
   }
 

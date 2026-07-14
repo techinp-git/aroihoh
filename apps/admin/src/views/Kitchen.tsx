@@ -9,6 +9,7 @@ import {
   type KitchenOrder,
 } from '../api';
 import BrandChip from '../components/BrandChip';
+import { printHtml, kitchenTicketHtml, riderLabelHtml } from '../lib/print';
 
 function beep() {
   try {
@@ -100,6 +101,9 @@ export default function Kitchen() {
     setError('');
     try {
       await changeStatus(o.brandId, o.id, to);
+      // US-42: รับออเดอร์ (→confirmed) พิมพ์ใบครัว · US-43: จัดเสร็จ (→ready) พิมพ์ label ไรเดอร์
+      if (to === 'confirmed') printHtml(kitchenTicketHtml(o));
+      else if (to === 'ready') printHtml(riderLabelHtml(o));
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -132,7 +136,14 @@ export default function Kitchen() {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
                 <BrandChip name={o.brand.name} />
-                <span style={{ fontSize: 12, color: '#999' }}>{since(o.createdAt)}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    title={o.status === 'ready' ? 'พิมพ์ label ซ้ำ' : 'พิมพ์ใบครัวซ้ำ'}
+                    onClick={() => printHtml(o.status === 'ready' ? riderLabelHtml(o) : kitchenTicketHtml(o))}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, padding: 0 }}
+                  >🖨️</button>
+                  <span style={{ fontSize: 12, color: '#999' }}>{since(o.createdAt)}</span>
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <b style={{ fontSize: 15 }}>#{o.id.slice(0, 6)}</b>

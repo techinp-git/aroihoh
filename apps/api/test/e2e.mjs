@@ -246,6 +246,10 @@ async function main() {
   const kds = await req('GET', '/admin/kitchen/orders', { token: adminToken });
   ok(kds.status === 200 && Array.isArray(kds.body), 'GET /admin/kitchen/orders (KDS)');
   ok(kds.body.some((o) => o.id === order.id && o.brand?.name), 'KDS มีออเดอร์ + ติด brandName · order ready อยู่ในคิว');
+  // US-43: KDS ต้องมี customer + address (+ ไม่คืน phoneEnc) ไว้พิมพ์ label ไรเดอร์
+  const kOrder = kds.body.find((o) => o.id === order.id);
+  ok(kOrder && 'customer' in kOrder && 'address' in kOrder, 'KDS คืน customer+address (US-43 label)');
+  ok(kOrder && kOrder.customer?.phoneEnc === undefined, 'KDS ไม่คืน phoneEnc (PDPA)');
 
   // 15) US-16 พักรับออเดอร์ → order ใหม่ 422
   const pause = await req('PATCH', `/admin/store/pause?brandId=${brandId}`, {

@@ -133,6 +133,8 @@ export const changeStatus = (brandId: string, orderId: string, status: string, r
 export interface KitchenOrder extends Order {
   brandId: string;
   brand: { name: string };
+  customer: { displayName: string | null };
+  address: { detail: string; lat: number; lng: number } | null;
 }
 export const listKitchenOrders = () => adminFetch<KitchenOrder[]>('/admin/kitchen/orders');
 export const kitchenStreamUrl = () =>
