@@ -256,6 +256,13 @@ async function main() {
     'admin เห็นออเดอร์ในลิสต์',
   );
 
+  // SEC-2: IDOR — ใช้ brandId ที่ตัวเองมีสิทธิ์ แต่ entity id ของอีกแบรนด์ → ต้องไม่ผ่าน (verify ownership ไม่ใช่แค่ brandId param)
+  // order อยู่ brandId(ชิมชีวา) · ลองสั่งงานผ่าน newBrandId (แบรนด์ที่ owner มีสิทธิ์เหมือนกัน) → order ไม่ได้อยู่แบรนด์นั้น
+  const idorStatus = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${newBrandId}`, { token: adminToken, body: { status: 'confirmed' } });
+  ok(idorStatus.status === 404 || idorStatus.status === 403, 'IDOR: เปลี่ยนสถานะ order ข้ามแบรนด์ (ownership) ถูกปฏิเสธ', `ได้ ${idorStatus.status}`);
+  const idorPaid = await req('PATCH', `/admin/orders/${order.id}/mark-paid?brandId=${newBrandId}`, { token: adminToken });
+  ok(idorPaid.status === 404 || idorPaid.status === 403, 'IDOR: mark-paid order ข้ามแบรนด์ ถูกปฏิเสธ', `ได้ ${idorPaid.status}`);
+
   // 14) status transition ไล่ลำดับ + กันถอยหลัง
   const toConfirmed = await req('PATCH', `/admin/orders/${order.id}/status?brandId=${brandId}`, {
     token: adminToken,
@@ -313,6 +320,9 @@ async function main() {
   ok(!!buyer, 'พบลูกค้า e2e-buyer ในระบบ');
   const optOut = await req('PATCH', `/admin/customers/${buyer.id}/opt-out?brandId=${brandId}`, { token: adminToken, body: { optedOut: true } });
   ok(optOut.status === 200 && optOut.body?.marketingOptedOut === true, 'ตั้ง opt-out ลูกค้า (PDPA)');
+  // SEC-2 IDOR: แก้ tag ลูกค้าโดยส่ง brandId อีกแบรนด์ (owner มีสิทธิ์) แต่ลูกค้าไม่ได้อยู่แบรนด์นั้น → ปฏิเสธ
+  const idorCust = await req('PATCH', `/admin/customers/${buyer.id}/tags?brandId=${newBrandId}`, { token: adminToken, body: { tags: ['x'] } });
+  ok(idorCust.status === 404 || idorCust.status === 403, 'IDOR: แก้ tag ลูกค้าข้ามแบรนด์ ถูกปฏิเสธ', `ได้ ${idorCust.status}`);
   const prev1 = await req('POST', `/admin/broadcasts/preview?brandId=${brandId}`, { token: adminToken, body: {} });
   ok(prev1.body?.audienceCount === baseAudience - 1 && prev1.body?.optedOut >= 1, 'opt-out ลด reach ลง 1 (กันส่งถึงคน opt-out)', `${baseAudience}→${prev1.body?.audienceCount}`);
   // สร้าง broadcast → queued + จอง message_logs
