@@ -69,7 +69,11 @@ export async function login(email: string, password: string) {
 }
 
 // ── Types ──
-export interface Brand { id: string; name: string; slug: string; isActive: boolean; codEnabled?: boolean; }
+export interface Brand {
+  id: string; name: string; slug: string; isActive: boolean; codEnabled?: boolean;
+  logoUrl?: string | null; brandKitchens?: { kitchenId: string }[];
+}
+export interface Kitchen { id: string; name: string; isOpen: boolean; }
 export interface OrderItem { id: string; nameSnapshot: string; unitPrice: number; qty: number; lineTotal: number; }
 export interface Order {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
@@ -93,6 +97,26 @@ export interface AdminUser {
 
 // ── Endpoints ──
 export const listBrands = () => adminFetch<Brand[]>('/admin/brands');
+
+// US-36: จัดการแบรนด์ (owner)
+export const listKitchens = () => adminFetch<Kitchen[]>('/admin/kitchens');
+
+export async function createBrand(input: {
+  name: string; slug: string; logoUrl?: string; kitchenIds: string[];
+}) {
+  const res = await adminFetch<{ brand: Brand; token: string; admin: AdminProfile }>(
+    '/admin/brands',
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+  // refresh token: brandIds เปลี่ยน (มีแบรนด์ใหม่) → เก็บ token ใหม่ ไม่งั้นเข้าถึงแบรนด์ใหม่ไม่ได้ (403)
+  setAuth(res.token, res.admin);
+  return res.brand;
+}
+
+export const updateBrand = (
+  id: string,
+  input: { name?: string; logoUrl?: string; isActive?: boolean; kitchenIds?: string[] },
+) => adminFetch<Brand>(`/admin/brands/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 
 export const listOrders = (brandId: string, status?: string) =>
   adminFetch<Order[]>(

@@ -24,6 +24,25 @@ export class AdminAuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
 
+    return this.buildAuth(user);
+  }
+
+  // US-36/ADR-06: ออก token ใหม่ให้ผู้ใช้เดิม (recompute brandIds)
+  // ใช้หลังสร้าง/ลบแบรนด์ — brandIds ใน token เป็น cache ต้อง refresh เมื่อชุดแบรนด์เปลี่ยน
+  async issueTokenFor(adminId: string) {
+    const user = await this.prisma.adminUser.findUnique({
+      where: { id: adminId },
+      include: { adminBrands: true },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('บัญชีไม่ถูกต้องหรือถูกปิดใช้งาน');
+    }
+    return this.buildAuth(user);
+  }
+
+  private async buildAuth(
+    user: { id: string; name: string; email: string; merchantId: string; role: string; adminBrands: { brandId: string }[] },
+  ) {
     const brandIds = await this.resolveBrandIds(
       user.merchantId,
       user.role as AdminRole,

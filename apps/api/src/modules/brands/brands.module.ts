@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { BrandsController } from './brands.controller';
+import { KitchensController } from './kitchens.controller';
+import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 
 @Module({
-  controllers: [BrandsController],
+  imports: [AdminAuthModule], // ใช้ AdminAuthService.issueTokenFor (refresh token หลังสร้างแบรนด์)
+  controllers: [BrandsController, KitchensController],
 })
 export class BrandsModule {}

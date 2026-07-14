@@ -101,6 +101,29 @@ async function main() {
   ok(!!brand?.id, 'พบแบรนด์ seed one-price-60');
   const brandId = brand.id;
 
+  // US-36: จัดการแบรนด์ — kitchens list + สร้างแบรนด์ + token refresh (brandIds เป็น cache)
+  const kitchens = await req('GET', '/admin/kitchens', { token: adminToken });
+  ok(kitchens.status === 200 && kitchens.body?.[0]?.id, 'GET /admin/kitchens (มีครัว seed)');
+  const kid = kitchens.body[0].id;
+  const uniqSlug = 'e2e-brand-' + Date.now().toString(36);
+  const createdBrand = await req('POST', '/admin/brands', {
+    token: adminToken, body: { name: 'E2E Brand', slug: uniqSlug, kitchenIds: [kid] },
+  });
+  ok(is2xx(createdBrand.status) && createdBrand.body?.brand?.id, 'POST /admin/brands สร้างแบรนด์ใหม่');
+  ok(typeof createdBrand.body?.token === 'string', 'สร้างแบรนด์คืน token ใหม่ (refresh brandIds cache)');
+  const newBrandId = createdBrand.body?.brand?.id;
+  // token เก่า (ก่อนสร้าง) เข้าถึงแบรนด์ใหม่ไม่ได้ → พิสูจน์ว่า refresh จำเป็น
+  const oldTokAccess = await req('PATCH', `/admin/brands/${newBrandId}/cod`, { token: adminToken, body: { enabled: false } });
+  ok(oldTokAccess.status === 403, 'token เก่าเข้าถึงแบรนด์ใหม่ไม่ได้ (403) — brandIds เป็น snapshot');
+  // token ใหม่เข้าถึงได้
+  const newTokAccess = await req('PATCH', `/admin/brands/${newBrandId}/cod`, { token: createdBrand.body.token, body: { enabled: false } });
+  ok(is2xx(newTokAccess.status), 'token ใหม่เข้าถึงแบรนด์ใหม่ได้ทันที');
+  // ผูกครัวข้าม merchant ไม่ได้
+  const badKitchen = await req('POST', '/admin/brands', {
+    token: createdBrand.body.token, body: { name: 'X', slug: uniqSlug + '-x', kitchenIds: ['00000000-0000-0000-0000-000000000000'] },
+  });
+  ok(badKitchen.status === 400, 'ผูกครัวข้าม merchant → 400 (tenant isolation)');
+
   // 4) เมนู (เอา menuItemId สำหรับสร้างออเดอร์)
   const menu = await req('GET', `/admin/menu?brandId=${brandId}`, { token: adminToken });
   ok(menu.status === 200 && menu.body?.length > 0, 'GET /admin/menu มีเมนู');

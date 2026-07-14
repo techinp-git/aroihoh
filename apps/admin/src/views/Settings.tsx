@@ -16,6 +16,7 @@ import {
   type StoreState,
   type LineConfig,
 } from '../api';
+import BrandManager from './settings/BrandManager';
 
 // การ์ดตั้งค่า LINE OA (SETUP-1) — owner เท่านั้น · secret/token ไม่ถูกส่งกลับมาแสดง
 function LineSetupCard({ brandId }: { brandId: string }) {
@@ -180,6 +181,9 @@ export default function Settings({
   return (
     <div style={{ maxWidth: 520 }}>
       {error && <div className="alert error">{error}</div>}
+
+      {/* US-36: จัดการแบรนด์ (owner) */}
+      {profile?.role === 'owner' && <BrandManager brands={brands} onChanged={onBrandsChanged} />}
 
       {/* LINE OA connection (SETUP-1) — owner only */}
       {profile?.role === 'owner' && brandId && <LineSetupCard brandId={brandId} />}
