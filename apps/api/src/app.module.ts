@@ -7,6 +7,7 @@ import { MenuModule } from './modules/menu/menu.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { BrandsModule } from './modules/brands/brands.module';
+import { KitchensModule } from './modules/kitchens/kitchens.module';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -29,6 +30,7 @@ import { LineModule } from './modules/line/line.module';
     DeliveryModule,
     OrdersModule,
     BrandsModule,
+    KitchensModule,
     AdminAuthModule,
     AdminUsersModule,
     ReportsModule,

@@ -73,7 +73,11 @@ export interface Brand {
   id: string; name: string; slug: string; isActive: boolean; codEnabled?: boolean;
   logoUrl?: string | null; brandKitchens?: { kitchenId: string }[];
 }
-export interface Kitchen { id: string; name: string; isOpen: boolean; }
+export interface Kitchen {
+  id: string; name: string; isOpen: boolean;
+  lat?: number; lng?: number; maxDistanceKm?: number | null;
+  zoneType?: string; brandCount?: number; feeType?: string | null; flatFee?: number | null;
+}
 export interface OrderItem { id: string; nameSnapshot: string; unitPrice: number; qty: number; lineTotal: number; }
 export interface Order {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
@@ -100,6 +104,16 @@ export const listBrands = () => adminFetch<Brand[]>('/admin/brands');
 
 // US-36: จัดการแบรนด์ (owner)
 export const listKitchens = () => adminFetch<Kitchen[]>('/admin/kitchens');
+
+// US-44: จัดการครัว/location (owner) — flatFee = สตางค์
+export const createKitchen = (input: {
+  name: string; lat: number; lng: number; maxDistanceKm: number; flatFee: number;
+}) => adminFetch<{ id: string; name: string }>('/admin/kitchens', { method: 'POST', body: JSON.stringify(input) });
+
+export const updateKitchen = (
+  id: string,
+  input: { name?: string; lat?: number; lng?: number; maxDistanceKm?: number; flatFee?: number },
+) => adminFetch<{ ok: boolean }>(`/admin/kitchens/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 
 export async function createBrand(input: {
   name: string; slug: string; logoUrl?: string; kitchenIds: string[];

@@ -136,6 +136,19 @@ async function main() {
   });
   ok(sameCopy.status === 400, 'คัดลอก source=target → 400');
 
+  // US-44: จัดการครัว — สร้างครัว (มี flat fee) + list รายละเอียด + แก้ไข
+  const newKitchen = await req('POST', '/admin/kitchens', {
+    token: adminToken, body: { name: 'ครัว e2e', lat: 13.72, lng: 100.57, maxDistanceKm: 4, flatFee: 2000 },
+  });
+  ok(is2xx(newKitchen.status) && newKitchen.body?.id, 'POST /admin/kitchens สร้างครัว');
+  const kDetail = await req('GET', '/admin/kitchens', { token: adminToken });
+  const madeK = (kDetail.body || []).find((k) => k.id === newKitchen.body.id);
+  ok(madeK && madeK.feeType === 'flat' && madeK.flatFee === 2000, 'ครัวใหม่มี flat fee 2000 (สั่งได้จริง)');
+  const kUpd = await req('PATCH', `/admin/kitchens/${newKitchen.body.id}`, {
+    token: adminToken, body: { maxDistanceKm: 6, flatFee: 2500 },
+  });
+  ok(is2xx(kUpd.status), 'PATCH /admin/kitchens แก้รัศมี+ค่าส่ง');
+
   // 4) เมนู (เอา menuItemId สำหรับสร้างออเดอร์)
   const menu = await req('GET', `/admin/menu?brandId=${brandId}`, { token: adminToken });
   ok(menu.status === 200 && menu.body?.length > 0, 'GET /admin/menu มีเมนู');
