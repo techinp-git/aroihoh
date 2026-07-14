@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateCategoryDto,
@@ -75,6 +75,52 @@ export class MenuService {
     await this.assertItem(brandId, id);
     await this.prisma.menuItem.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  // US-36b: คัดลอกเมนู (หมวด + item) ข้ามแบรนด์ — setup แบรนด์ใหม่เร็ว (ครัวเดียวเมนูมักซ้ำ)
+  // append เข้า target (ไม่ลบของเดิม) · id ใหม่ทั้งหมด · ราคา/ชื่อ snapshot จากต้นทาง ตั้งใหม่ทีหลังได้
+  async copyMenu(sourceBrandId: string, targetBrandId: string) {
+    if (sourceBrandId === targetBrandId) {
+      throw new BadRequestException('แบรนด์ต้นทางและปลายทางต้องต่างกัน');
+    }
+    const categories = await this.prisma.menuCategory.findMany({
+      where: { brandId: sourceBrandId },
+      orderBy: { sortOrder: 'asc' },
+      include: { items: true },
+    });
+    const orphanItems = await this.prisma.menuItem.findMany({
+      where: { brandId: sourceBrandId, categoryId: null },
+    });
+
+    let cats = 0;
+    let items = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const c of categories) {
+        const newCat = await tx.menuCategory.create({
+          data: { brandId: targetBrandId, name: c.name, sortOrder: c.sortOrder, isActive: c.isActive },
+        });
+        cats++;
+        for (const it of c.items) {
+          await tx.menuItem.create({
+            data: {
+              brandId: targetBrandId, categoryId: newCat.id, name: it.name,
+              description: it.description, price: it.price, imageUrl: it.imageUrl, isAvailable: it.isAvailable,
+            },
+          });
+          items++;
+        }
+      }
+      for (const it of orphanItems) {
+        await tx.menuItem.create({
+          data: {
+            brandId: targetBrandId, categoryId: null, name: it.name,
+            description: it.description, price: it.price, imageUrl: it.imageUrl, isAvailable: it.isAvailable,
+          },
+        });
+        items++;
+      }
+    });
+    return { categories: cats, items };
   }
 
   // กัน cross-tenant: ยืนยันว่า item เป็นของ brand นี้ก่อนแก้/ลบ

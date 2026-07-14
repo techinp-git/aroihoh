@@ -124,6 +124,18 @@ async function main() {
   });
   ok(badKitchen.status === 400, 'ผูกครัวข้าม merchant → 400 (tenant isolation)');
 
+  // US-36b: คัดลอกเมนู seed brand → แบรนด์ใหม่ (ว่าง) แล้วต้องมีเมนูตาม
+  const copyRes = await req('POST', '/admin/menu/copy', {
+    token: createdBrand.body.token, body: { sourceBrandId: brandId, targetBrandId: newBrandId },
+  });
+  ok(is2xx(copyRes.status) && copyRes.body?.items > 0, 'คัดลอกเมนูข้ามแบรนด์ (items > 0)', JSON.stringify(copyRes.body));
+  const copiedMenu = await req('GET', `/admin/menu?brandId=${newBrandId}`, { token: createdBrand.body.token });
+  ok(copiedMenu.body?.length === copyRes.body?.items, 'แบรนด์ใหม่มีเมนูตามจำนวนที่คัดลอก');
+  const sameCopy = await req('POST', '/admin/menu/copy', {
+    token: createdBrand.body.token, body: { sourceBrandId: newBrandId, targetBrandId: newBrandId },
+  });
+  ok(sameCopy.status === 400, 'คัดลอก source=target → 400');
+
   // 4) เมนู (เอา menuItemId สำหรับสร้างออเดอร์)
   const menu = await req('GET', `/admin/menu?brandId=${brandId}`, { token: adminToken });
   ok(menu.status === 200 && menu.body?.length > 0, 'GET /admin/menu มีเมนู');

@@ -137,6 +137,13 @@ export interface KitchenOrder extends Order {
   address: { detail: string; lat: number; lng: number } | null;
 }
 export const listKitchenOrders = () => adminFetch<KitchenOrder[]>('/admin/kitchen/orders');
+
+// US-36b: คัดลอกเมนูข้ามแบรนด์
+export const copyMenu = (sourceBrandId: string, targetBrandId: string) =>
+  adminFetch<{ categories: number; items: number }>('/admin/menu/copy', {
+    method: 'POST',
+    body: JSON.stringify({ sourceBrandId, targetBrandId }),
+  });
 export const kitchenStreamUrl = () =>
   `${API_BASE}/admin/kitchen/stream?token=${encodeURIComponent(getAdminToken())}`;
 

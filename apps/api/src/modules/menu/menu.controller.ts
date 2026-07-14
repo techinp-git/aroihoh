@@ -14,6 +14,7 @@ import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guar
 import { CurrentAdmin } from '../../common/decorators/current-admin.decorator';
 import { assertBrandAccess } from '../../common/admin-scope';
 import {
+  CopyMenuDto,
   CreateCategoryDto,
   CreateMenuItemDto,
   SetAvailabilityDto,
@@ -57,6 +58,15 @@ export class MenuController {
   createItem(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateMenuItemDto) {
     assertBrandAccess(admin, dto.brandId);
     return this.menu.createItem(dto);
+  }
+
+  // US-36b: คัดลอกเมนูข้ามแบรนด์ — ต้องมีสิทธิ์ทั้งต้นทางและปลายทาง
+  @UseGuards(AdminJwtGuard)
+  @Post('admin/menu/copy')
+  copyMenu(@CurrentAdmin() admin: AdminJwt, @Body() dto: CopyMenuDto) {
+    assertBrandAccess(admin, dto.sourceBrandId);
+    assertBrandAccess(admin, dto.targetBrandId);
+    return this.menu.copyMenu(dto.sourceBrandId, dto.targetBrandId);
   }
 
   @UseGuards(AdminJwtGuard)

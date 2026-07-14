@@ -13,6 +13,12 @@ export class CreateCategoryDto {
   @IsOptional() @IsInt() sortOrder?: number;
 }
 
+// US-36b: คัดลอกเมนูข้ามแบรนด์
+export class CopyMenuDto {
+  @IsString() @IsNotEmpty() sourceBrandId: string;
+  @IsString() @IsNotEmpty() targetBrandId: string;
+}
+
 export class CreateMenuItemDto {
   @IsString() @IsNotEmpty() brandId: string;
   @IsOptional() @IsString() categoryId?: string;

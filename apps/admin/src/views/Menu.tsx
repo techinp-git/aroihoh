@@ -7,9 +7,12 @@ import {
   deleteMenuItem,
   createMenuCategory,
   setItemAvailability,
+  listBrands,
+  copyMenu,
   baht,
   type MenuItem,
   type MenuCategory,
+  type Brand,
 } from '../api';
 
 type FormState = {
@@ -34,6 +37,32 @@ export default function Menu({ brandId }: { brandId: string }) {
   const [editing, setEditing] = useState<MenuItem | null>(null);
   const [f, setF] = useState<FormState>(EMPTY);
   const [newCat, setNewCat] = useState('');
+
+  // US-36b: คัดลอกเมนูจากแบรนด์อื่น
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [copyFrom, setCopyFrom] = useState('');
+  useEffect(() => {
+    listBrands().then(setBrands).catch(() => {});
+  }, []);
+  const otherBrands = brands.filter((b) => b.id !== brandId);
+
+  const doCopy = async () => {
+    if (!copyFrom) return;
+    const src = brands.find((b) => b.id === copyFrom);
+    if (!confirm(`คัดลอกเมนูทั้งหมดจาก "${src?.name}" มาที่แบรนด์นี้? (เพิ่มเข้ามา ไม่ลบของเดิม)`)) return;
+    setBusy('copy');
+    setError('');
+    try {
+      const r = await copyMenu(copyFrom, brandId);
+      setCopyFrom('');
+      await load();
+      alert(`คัดลอกแล้ว: ${r.categories} หมวด, ${r.items} เมนู`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!brandId) return;
@@ -179,6 +208,30 @@ export default function Menu({ brandId }: { brandId: string }) {
           <button className="btn primary sm" onClick={openNew}>+ เพิ่มเมนู</button>
         </div>
       </div>
+
+      {/* US-36b: คัดลอกเมนูจากแบรนด์อื่น (เด่นเมื่อแบรนด์นี้ยังไม่มีเมนู) */}
+      {otherBrands.length > 0 && (
+        <div
+          className="card"
+          style={{
+            padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+            border: items.length === 0 ? '1px solid #e8734a' : undefined,
+            background: items.length === 0 ? '#fdf4ef' : undefined,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>📋 คัดลอกเมนูจาก</span>
+          <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} style={{ minWidth: 180 }}>
+            <option value="">— เลือกแบรนด์ —</option>
+            {otherBrands.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <button className="btn primary sm" onClick={doCopy} disabled={!copyFrom || busy === 'copy'}>
+            {busy === 'copy' ? <span className="spinner" /> : 'คัดลอกมาที่แบรนด์นี้'}
+          </button>
+          {items.length === 0 && <span style={{ fontSize: 12, color: '#a15' }}>แบรนด์นี้ยังไม่มีเมนู — คัดลอกจากแบรนด์เดิมแล้วปรับราคาทีหลังได้</span>}
+        </div>
+      )}
 
       {/* ฟอร์มสร้าง/แก้ไข */}
       {showForm && (
