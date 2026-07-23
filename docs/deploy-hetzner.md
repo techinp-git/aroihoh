@@ -8,9 +8,9 @@
 โดเมน:
 | subdomain | ชี้ไป |
 |---|---|
-| `api.jivecode.click` | API container (127.0.0.1:3000) |
-| `order.jivecode.click` | `/var/www/aroihoh-liff` (LIFF) |
-| `admin.jivecode.click` | `/var/www/aroihoh-admin` (Admin) |
+| `aroihoh-api.jivecode.click` | API container (127.0.0.1:3000) |
+| `aroihoh-order.jivecode.click` | `/var/www/aroihoh-liff` (LIFF) |
+| `aroihoh-admin.jivecode.click` | `/var/www/aroihoh-admin` (Admin) |
 
 ---
 
@@ -19,9 +19,9 @@
 1. **สร้าง Cloud Server**: type **CX22** (2 vCPU / 4GB), location **Singapore**, image Ubuntu 24.04
 2. **DNS** (ที่ผู้ให้บริการโดเมน jivecode.click): เพิ่ม A record ชี้มาที่ IP เครื่อง
    ```
-   api.jivecode.click     A   <SERVER_IP>
-   order.jivecode.click   A   <SERVER_IP>
-   admin.jivecode.click   A   <SERVER_IP>
+   aroihoh-api.jivecode.click     A   <SERVER_IP>
+   aroihoh-order.jivecode.click   A   <SERVER_IP>
+   aroihoh-admin.jivecode.click   A   <SERVER_IP>
    ```
 3. **Hetzner Cloud Firewall** (ฟรี): เปิดเฉพาะ 22 (SSH), 80, 443 — ปิดที่เหลือ
 4. ลง Docker (ถ้ายังไม่มี — แต่มี project อื่นรัน Docker อยู่แล้วน่าจะมี):
@@ -81,7 +81,7 @@ docker compose -f docker-compose.prod.yml exec api npx ts-node prisma/seed.ts
 
 ```bash
 # ตั้ง env build ให้ชี้ API จริง (Vite ฝังตอน build)
-export VITE_API_BASE_URL=https://api.jivecode.click
+export VITE_API_BASE_URL=https://aroihoh-api.jivecode.click
 export VITE_LIFF_ID=<LIFF ID ของแบรนด์>   # ดูขั้น 7
 
 npm ci
@@ -93,7 +93,7 @@ sudo mkdir -p /var/www/aroihoh-liff /var/www/aroihoh-admin
 sudo cp -r apps/liff/dist/*  /var/www/aroihoh-liff/
 sudo cp -r apps/admin/dist/* /var/www/aroihoh-admin/
 ```
-> LIFF ต้องรู้ `brandId` — ตั้งใน LIFF Endpoint URL เป็น `https://order.jivecode.click/?brandId=<id>` (ดูขั้น 7) ไม่ต้อง build ใหม่ต่อแบรนด์
+> LIFF ต้องรู้ `brandId` — ตั้งใน LIFF Endpoint URL เป็น `https://aroihoh-order.jivecode.click/?brandId=<id>` (ดูขั้น 7) ไม่ต้อง build ใหม่ต่อแบรนด์
 
 ## 6. ต่อ Caddy (host)
 
@@ -102,14 +102,14 @@ sudo cp -r apps/admin/dist/* /var/www/aroihoh-admin/
 sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
-เช็ค: เปิด `https://api.jivecode.click/api/health` ในเบราว์เซอร์ → 200 + มี HTTPS (กุญแจเขียว)
+เช็ค: เปิด `https://aroihoh-api.jivecode.click/api/health` ในเบราว์เซอร์ → 200 + มี HTTPS (กุญแจเขียว)
 
 ## 7. ต่อ LINE OA (ใช้ค่าจริง)
 
-ในหน้า Admin (`https://admin.jivecode.click`) → ตั้งค่า → เชื่อมต่อ LINE OA (owner):
-- Webhook URL: `https://api.jivecode.click/api/line/webhook/<brandId>`
+ในหน้า Admin (`https://aroihoh-admin.jivecode.click`) → ตั้งค่า → เชื่อมต่อ LINE OA (owner):
+- Webhook URL: `https://aroihoh-api.jivecode.click/api/line/webhook/<brandId>`
 - เสียบ Channel ID / secret / access token / LIFF ID
-- ใน LINE Developers Console: ตั้ง LIFF Endpoint URL = `https://order.jivecode.click/?brandId=<brandId>`
+- ใน LINE Developers Console: ตั้ง LIFF Endpoint URL = `https://aroihoh-order.jivecode.click/?brandId=<brandId>`
 
 ---
 

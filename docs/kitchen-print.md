@@ -13,16 +13,16 @@
 **macOS**
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --kiosk-printing --app=https://admin.jivecode.click
+  --kiosk-printing --app=https://aroihoh-admin.jivecode.click
 ```
 **Windows**
 ```bat
 "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
-  --kiosk-printing --app=https://admin.jivecode.click
+  --kiosk-printing --app=https://aroihoh-admin.jivecode.click
 ```
 **Linux**
 ```bash
-google-chrome --kiosk-printing --app=https://admin.jivecode.click
+google-chrome --kiosk-printing --app=https://aroihoh-admin.jivecode.click
 ```
 
 `--kiosk-printing` = พิมพ์ออกเครื่อง **default** ทันทีไม่มี dialog · `--app=` = เปิดแบบเต็มจอไม่มีแถบเบราว์เซอร์

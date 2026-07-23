@@ -22,7 +22,7 @@ async function bootstrap() {
     }),
   );
   // LIFF/Admin รันคนละ origin ตอน dev — production ให้ล็อก origin จริงผ่าน env
-  // CORS_ORIGINS = รายการ origin คั่นด้วย comma (เช่น https://order.jivecode.click,https://admin.jivecode.click)
+  // CORS_ORIGINS = รายการ origin คั่นด้วย comma (เช่น https://aroihoh-order.jivecode.click,https://aroihoh-admin.jivecode.click)
   // ไม่ตั้ง = อนุญาตทุก origin (dev เท่านั้น) — prod ต้องตั้งเสมอ
   const corsOrigins = process.env.CORS_ORIGINS?.split(',')
     .map((s) => s.trim())

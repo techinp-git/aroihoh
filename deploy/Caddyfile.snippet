@@ -3,13 +3,13 @@
 # หลังแก้:  sudo caddy validate --config /etc/caddy/Caddyfile  แล้ว  sudo systemctl reload caddy
 
 # API — reverse proxy ไปที่ container ที่เปิด 127.0.0.1:3000
-api.jivecode.click {
+aroihoh-api.jivecode.click {
 	reverse_proxy localhost:3000
 }
 
 # LIFF (ลูกค้าสั่งอาหาร) — เสิร์ฟ static build ของ apps/liff/dist
 # SPA: ไม่เจอไฟล์ → คืน index.html ให้ React router จัดการ
-order.jivecode.click {
+aroihoh-order.jivecode.click {
 	root * /var/www/aroihoh-liff
 	encode gzip
 	try_files {path} /index.html
@@ -17,7 +17,7 @@ order.jivecode.click {
 }
 
 # Admin (หลังบ้านร้าน) — เสิร์ฟ static build ของ apps/admin/dist
-admin.jivecode.click {
+aroihoh-admin.jivecode.click {
 	root * /var/www/aroihoh-admin
 	encode gzip
 	try_files {path} /index.html
