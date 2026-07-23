@@ -132,3 +132,4 @@ export class LineConfigService {
     await this.prisma.brand.update({ where: { id: brandId }, data: { richMenuId: created.richMenuId } });
     return { ok: true, richMenuId: created.richMenuId, replaced: b.richMenuId ?? null };
   }
+}
