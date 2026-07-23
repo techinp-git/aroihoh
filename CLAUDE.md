@@ -5,10 +5,11 @@
 ## สถานะ ณ 23 ก.ค. 2026 (อัปเดตทุกครั้งที่ audit)
 - EP-12 (หลายแบรนด์ ครัวเดียว) + EP-13 (SaaS readiness) = **done ครบทุก subtask**
 - **คอขวดเดียวที่บล็อกงานเหลือ = `SETUP-1`** (LINE OA + Messaging API Channel + LIFF App + keys) — LINE layer เขียนครบแล้วแต่ **gated**: ไม่มี access token → `LineClient` skip เงียบ ๆ · บล็อก US-01, US-08, US-09, US-10 และการยิง chat/broadcast จริง
-- `DEPLOY-1` ควรทำ**ก่อน** SETUP-1 เพราะ LINE บังคับ webhook เป็น public HTTPS (dev ใช้ cloudflared ได้ — `vite.config.ts` ตั้ง `allowedHosts: true` ไว้แล้ว)
+- คอขวดเดียวที่เหลือ = `SETUP-1` (LINE keys) — deploy เสร็จแล้ว webhook URL พร้อมใช้
 - ✅ ปิดไปแล้ว 23 ก.ค.: US-08 (Flex) · US-09 (BullMQ queue) · US-19 (margin/breakeven) — ทั้งหมดทดสอบกับ Redis + DB จริงแล้ว
 - ✅ US-10 Rich Menu ปิดแล้ว → **หนี้โค้ดฝั่ง LINE หมด** ที่เหลือรอ keys/deploy ล้วน ๆ
-- DEPLOY-1: เครื่อง Hetzner `49.13.57.24` มีอยู่ + Caddy รันอยู่แล้ว (ตอบ 80/443) · ค้างที่ **DNS ยังไม่ตั้ง** + **SSH key ยังไม่ authorize** · Docker prod image build+boot ผ่านแล้ว (คิวต่อ Redis ได้, dev-login ปิด 403)
+- ✅ DEPLOY-1 **เสร็จแล้ว** 23 ก.ค.: prod รันที่ `49.13.57.24` (`/opt/aroihoh`, compose: api+postgis+redis) · `aroihoh-api/order/admin.jivecode.click` HTTPS ผ่าน Caddy บน host (Caddyfile ร่วมกับ health/jcorp/router — แก้ต้อง `caddy validate` ก่อน reload เสมอ) · seed แล้ว · คิว BullMQ ต่อ Redis ได้จริง · dev-login ปิด (403)
+- ⚠️ deploy gotchas ที่เจอจริง: seed ในคอนเทนเนอร์ต้อง `npx ts-node -O '{\"module\":\"commonjs\"}' prisma/seed.ts` (ESM พัง) · `VITE_API_BASE_URL` **ต้องมี `/api` ต่อท้าย** · เขียน log ที่ `/tmp` ไม่ได้ (มีของ project อื่น) ใช้ `/root/`
 - ⚠️ legal blocker ก่อนเก็บข้อมูลลูกค้าจริง: **PDPA pack** (privacy policy + consent + opt-out) ยังไม่มี — โค้ด opt-out พร้อมแล้วแต่เอกสารยังไม่ได้เขียน
 
 ## Source of truth
@@ -94,7 +95,7 @@ npm run prisma:seed -w apps/api      # seed แบรนด์ชิมชีว
 - ADR-04: **monorepo npm workspaces** (เครื่อง dev ไม่มี pnpm) — shared types อยู่ `packages/shared`
 - DB: PostgreSQL + **PostGIS** (docker image `postgis/postgis:16-3.4`) + Prisma
 - **ADR-0005 tenant schema** (`docs/adr/0005-tenant-schema.md`, Accepted): **Merchant → Brand → Kitchen** — Brand = tenant key ของ app (`brandId`) · Kitchen = จุดผลิต+เขตส่ง+กฎค่าส่ง แชร์หลายแบรนด์ผ่าน `BrandKitchen` (m:n) · เฟส A = 1 Merchant, N Brand, 1 Kitchen · **`schema.prisma` เขียนครบแล้ว 20 models** (ไม่ใช่ไฟล์ว่างอีกต่อไป)
-- ADR-03 hosting: **Hetzner Cloud (CX22) + Docker + Caddy** ที่มีอยู่เดิม โดเมน `jivecode.click` — โค้ด/compose/Caddyfile พร้อมแล้ว (`docs/deploy-hetzner.md`) เหลือรันจริง = task `DEPLOY-1`
+- ADR-03 hosting: **Hetzner Cloud (CX22) + Docker + Caddy** ที่มีอยู่เดิม โดเมน `jivecode.click` — โค้ด/compose/Caddyfile พร้อมแล้ว (`docs/deploy-hetzner.md`) **deploy แล้ว** ที่ `49.13.57.24` (`/opt/aroihoh`) — `aroihoh-api/order/admin.jivecode.click` HTTPS ผ่าน Caddy บน host
 - ADR-05: multi-tenant **SaaS-first** (isolate ด้วย merchantId) + dedicated-instance เป็นทางเลือกลูกค้าใหญ่
 - ADR-06: LINE OA = **1 Brand : 1 OA** (creds เก็บที่ Brand) — defer LineChannel/shared-OA จนกว่าจะมีดีมานด์
 - ADR-07: **House of Brands** (1 แบรนด์ 1 OA แยก identity) + backend รวม
