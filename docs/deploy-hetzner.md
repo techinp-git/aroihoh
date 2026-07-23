@@ -43,14 +43,26 @@ cd aroihoh
 cp .env.prod.example .env.prod
 nano .env.prod        # เติมค่าจริงทุก __CHANGE_ME__
 ```
-ค่าที่ **ต้อง** เปลี่ยน: `POSTGRES_PASSWORD` (+ ให้ตรงใน `DATABASE_URL`), `JWT_SECRET`, `ADMIN_JWT_SECRET` (สุ่มด้วย `openssl rand -hex 32` คนละค่า), `ADMIN_SEED_PASSWORD`
+ค่าที่ **ต้อง** เปลี่ยน: `POSTGRES_PASSWORD` (+ ให้ตรงใน `DATABASE_URL`), `JWT_SECRET`, `ADMIN_JWT_SECRET`, `ENCRYPTION_KEY` (สุ่มด้วย `openssl rand -hex 32` คนละค่า), `ADMIN_SEED_PASSWORD`
+
+> ⚠️ **`ENCRYPTION_KEY` ต้องตั้งก่อนเสียบ LINE keys ครั้งแรก** (SEC-1 เข้ารหัส channel secret/token at-rest)
+> ตั้งทีหลังหรือเปลี่ยนคีย์หลังมีข้อมูลแล้ว = **ถอดรหัสของเดิมไม่ออก** ต้องกรอก LINE keys ใหม่ทุกแบรนด์
+>
+> ⚠️ **`REDIS_URL` ต้องตั้ง** (`redis://redis:6379`) ไม่งั้นคิว push (US-09) จะ fallback เป็นโหมด inline เงียบ ๆ —
+> ส่งได้แต่ไม่มี retry/backoff ตอน LINE rate limit
 
 ## 3. รัน API + DB
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
-ตรวจว่าขึ้น: `docker compose -f docker-compose.prod.yml ps` — ควรเห็น postgres (healthy) + api (up)
+ตรวจว่าขึ้น: `docker compose -f docker-compose.prod.yml ps` — ควรเห็น postgres (healthy) + redis (healthy) + api (up)
+
+ตรวจว่าคิว push ต่อ Redis ได้จริง (ไม่ใช่ fallback inline):
+```bash
+docker compose -f docker-compose.prod.yml logs api | grep -i "line-notify\|REDIS_URL"
+```
+เห็น `คิว line-notify พร้อม (Redis)` = ถูกต้อง · เห็น `ไม่มี REDIS_URL — โหมด inline` = ยังไม่ได้ตั้ง `REDIS_URL`
 
 ## 4. Migrate DB (+ seed ครั้งแรกเท่านั้น)
 

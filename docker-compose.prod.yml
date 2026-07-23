@@ -32,18 +32,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     # เปิดเฉพาะ localhost ของ host → Caddy บน host วิ่งเข้ามาได้ แต่โลกภายนอกเข้าตรงไม่ได้
     ports:
       - '127.0.0.1:3000:3000'
 
-  # Redis — เปิดใช้ตอนทำ BullMQ (US-09) แล้วค่อยปลดคอมเมนต์ + ตั้ง REDIS_URL=redis://redis:6379
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: aroihoh-redis
-  #   restart: unless-stopped
-  #   volumes:
-  #     - redisdata:/data
+  # US-09: คิว push LINE (BullMQ) — ต้องตั้ง REDIS_URL=redis://redis:6379 ใน .env.prod ด้วย
+  # ไม่ตั้ง = API จะ fallback เป็นโหมด inline (ส่งทันที ไม่มี retry) แบบเงียบ ๆ
+  redis:
+    image: redis:7-alpine
+    container_name: aroihoh-redis
+    restart: unless-stopped
+    # ไม่เปิด ports ออกนอก — เข้าถึงได้แค่ผ่าน docker network ภายใน
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   pgdata:
-  # redisdata:
+  redisdata:
