@@ -81,7 +81,7 @@ docker compose -f docker-compose.prod.yml exec api npx ts-node prisma/seed.ts
 
 ```bash
 # ตั้ง env build ให้ชี้ API จริง (Vite ฝังตอน build)
-export VITE_API_BASE_URL=https://aroihoh-api.jivecode.click
+export VITE_API_BASE_URL=https://aroihoh-api.jivecode.click/api   # ⚠️ ต้องมี /api ต่อท้าย
 export VITE_LIFF_ID=<LIFF ID ของแบรนด์>   # ดูขั้น 7
 
 npm ci

@@ -1,8 +1,12 @@
 import { ORDER_STATUS_FLOW } from '@aroihoh/shared';
 
 // API client ฝั่งแอดมิน — ใช้ admin JWT (US-29) แทน x-admin-key
+// ลำดับ: localStorage (override ตอน debug) → ค่าตอน build (prod) → localhost (dev)
+// ⚠️ VITE_API_BASE_URL ต้องมี /api ต่อท้าย (เช่น https://aroihoh-api.jivecode.click/api)
 export const API_BASE =
-  localStorage.getItem('apiBase') || 'http://localhost:3000/api';
+  localStorage.getItem('apiBase') ||
+  (import.meta.env.VITE_API_BASE_URL as string) ||
+  'http://localhost:3000/api';
 
 export const getAdminToken = () => localStorage.getItem('adminToken') || '';
 
