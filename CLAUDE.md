@@ -2,6 +2,14 @@
 
 ระบบสั่งอาหารผ่าน LINE OA + LIFF (สั่งตรง ไม่เสีย GP) — เฟส A ใช้กับแบรนด์ตัวเอง "ชิมชีวา One Price 60" ย่านอโศก/มศว
 
+## สถานะ ณ 23 ก.ค. 2026 (อัปเดตทุกครั้งที่ audit)
+- EP-12 (หลายแบรนด์ ครัวเดียว) + EP-13 (SaaS readiness) = **done ครบทุก subtask**
+- **คอขวดเดียวที่บล็อกงานเหลือ = `SETUP-1`** (LINE OA + Messaging API Channel + LIFF App + keys) — LINE layer เขียนครบแล้วแต่ **gated**: ไม่มี access token → `LineClient` skip เงียบ ๆ · บล็อก US-01, US-08, US-09, US-10 และการยิง chat/broadcast จริง
+- `DEPLOY-1` ควรทำ**ก่อน** SETUP-1 เพราะ LINE บังคับ webhook เป็น public HTTPS (dev ใช้ cloudflared ได้ — `vite.config.ts` ตั้ง `allowedHosts: true` ไว้แล้ว)
+- ✅ ปิดไปแล้ว 23 ก.ค.: US-08 (Flex) · US-09 (BullMQ queue) · US-19 (margin/breakeven) — ทั้งหมดทดสอบกับ Redis + DB จริงแล้ว
+- ยังไม่มีในโค้ด: **Rich Menu** (หนี้ US-10 เดียวที่เหลือ)
+- ⚠️ legal blocker ก่อนเก็บข้อมูลลูกค้าจริง: **PDPA pack** (privacy policy + consent + opt-out) ยังไม่มี — โค้ด opt-out พร้อมแล้วแต่เอกสารยังไม่ได้เขียน
+
 ## Source of truth
 - Backlog/task: AI Intranet → project `fb-project` (org `c46e73f8-0328-4627-bb51-df0eb4b70c47`)
 - เอกสารแผน: Knowledge Board "F&B" (`1f9d454c-1468-49bd-9311-357f73528bf1`) — การ์ด "แผนระบบ LINE OA + LIFF" (v2.0) และ "หลายแบรนด์ ครัวเดียว"
@@ -17,14 +25,16 @@
 
 Module ใน `apps/api/src/modules/`:
 - ลงแล้ว: `auth` (US-01 LIFF ID token→JWT), `menu` (US-14 CRUD + public list), `delivery` (US-15 zone check radius + fee flat/tiered/per_km), `orders` (US-02/04/05 สร้างออเดอร์ idempotent + re-check เขต/ราคา server-side + ดูออเดอร์ตัวเอง; US-12 admin เปลี่ยนสถานะไล่ลำดับ + audit log + list), `admin-auth` (US-29 login email/password→admin JWT + me), `admin-users` (US-30 CRUD user + RBAC role/สิทธิ์ต่อแบรนด์), `brands`, `health`
-- pure domain (unit-tested, 21 tests): `delivery/geo.ts`, `delivery/fee.ts`, `orders/pricing.ts`, `orders/status.ts`; orders.service มี unit test mock prisma/delivery
+- pure domain (unit-tested — รวมทั้งโปรเจกต์ **71 tests / 13 suites**): `delivery/geo.ts`, `delivery/fee.ts`, `orders/pricing.ts`, `orders/status.ts`; orders.service มี unit test mock prisma/delivery
 - ลงเพิ่ม: `payments` (US-07 COD mark-paid + config codEnabled ต่อแบรนด์), `reports` (US-13 backend — GET /admin/reports/daily, pure `summarizeOrders`), `customers` (US-35 admin list+detail+ประวัติออเดอร์, PDPA ไม่คืน phoneEnc, pure `computeCustomerStats`)
 - ลงเพิ่ม: `customers` (US-35), `chat` (US-21 core — chat_messages, conversations/thread/send; ยิงเข้า LINE จริงรอ SETUP-1)
 - ลงเพิ่ม: `broadcasts` (US-18 — preview reach/create+list/detail · จอง message_logs(queued, dedupeKey) กันส่งซ้ำ · owner/manager · ยิง LINE จริงรอ SETUP-1 = BullMQ worker) · รับได้ทั้ง contentId+audienceId หรือ message+segment(tags) ad-hoc · customers PATCH /:id/opt-out (PDPA)
 - ลงเพิ่ม: `content` (US-18 คลังข้อความใช้ซ้ำ CRUD) + `audiences` (US-18 กลุ่มเป้าหมายบันทึกไว้ · pure `rules.ts` resolveAudienceByRules ประเมินสด: tenure_min_days/order_count_in_window/lapsed/tags, match all|any, หัก opt-out เสมอ · presets 3 ตัว · CRUD+preview reach) — ทั้งคู่ owner/manager
 - ลงเพิ่ม: `line` (US-10 core — POST /api/line/webhook/:brandId verify `x-line-signature` บน rawBody (main.ts rawBody:true, pure `line-signature.ts` 6 tests) · inbound text → Chat Center · follow → welcome · `LineClient` push/reply (gated: ไม่มี access token → skipped) · broadcast dispatch POST /admin/broadcasts/:id/dispatch drain message_logs) — ยิงจริงรอ SETUP-1 keys · เหลือ Flex(US-08)/BullMQ queue(US-09)/Rich Menu
-- ยังไม่ลง: Flex message US-08, payment gateway US-06 (รอ SETUP-4), `notifications` BullMQ US-09, `telegram` (EP-11)
-- migrations: 0001_init · 0002_add_cod_enabled · 0003_chat_messages · 0004_customer_tags · 0005_store_hours · 0006_broadcasts (customers.marketingOptedOut + broadcasts) · 0007_content_audiences (content_library + audiences + broadcasts.contentId/audienceId)
+- ลงเพิ่ม: `notifications` (US-08/09 — คิวแจ้งเตือน LINE) · pure `dedupe.ts` (buildDedupeKey `confirm:<orderId>` / `status:<orderId>:<status>`, isRetryableStatus 429/5xx, backoffMs, isValidJob) · `notifications.service.ts` จองแถว `message_logs(queued)` ก่อนเข้าคิว → **P2002 = เคยส่งแล้ว ข้าม** (dedupe บังคับที่ DB unique ไม่ใช่แค่ระดับแอป) · BullMQ attempts 3 + exponential backoff, concurrency 3 · **ไม่มี `REDIS_URL` = โหมด inline** (ส่งทันที ไม่มี retry — dev/CI) · ไม่มี LINE keys = `unreserve()` ลบแถวที่จองทิ้ง ให้ส่งใหม่ได้เมื่อ keys มา (ตัวเลขไม่เพี้ยน) · hook ที่ orders.service: create → `notifyOrderConfirmed` (Flex), updateStatus → `notifyStatusChanged` (เฉพาะ `shouldNotify`) ทั้งคู่ `void ... .catch()` ไม่ให้ push พังทำ API พัง
+- ลงเพิ่ม: `line/flex.ts` (US-08 — pure builder) `buildOrderConfirmFlex` bubble ใบยืนยัน (header สีแบรนด์จาก theme US-39 + รายการ + สรุปเงิน + ปุ่ม deep link `https://liff.line.me/<liffId>?orderId=`) · `orderConfirmAltText` (≤400 ตัวอักษร) · `statusUpdateText` · **`NOTIFY_STATUSES` = confirmed/delivering/completed/cancelled เท่านั้น** (pending/preparing/ready ไม่ยิง — ประหยัดโควตา) · `LineClient.pushFlex` · 22 tests
+- ยังไม่ลง: payment gateway US-06 (รอ SETUP-4), `telegram` (EP-11), Rich Menu (หนี้ US-10)
+- migrations: 0001_init · 0002_add_cod_enabled · 0003_chat_messages · 0004_customer_tags · 0005_store_hours · 0006_broadcasts (customers.marketingOptedOut + broadcasts) · 0007_content_audiences (content_library + audiences + broadcasts.contentId/audienceId) · 0008_message_channel (MessageChannel reply|push + MessageType auto_reply/chat — groundwork ให้ US-09 ยังไม่ใช่ตัว US-09) · 0009_order_ready · 0010_roles_kitchen_chat · 0011_menu_cost (US-19: `menu_items.costPrice` + `order_items.unitCost` snapshot + `brands.fixedCostDaily`)
 - US-16 store: kitchens.openTime/closeTime + isOpen · `store` module (GET /admin/store, PATCH pause/hours) · delivery.quote เช็ค isAccepting (พัก/นอกเวลา → order 422) · Settings มีการ์ดสถานะร้าน
 - US-21 chat: 3-column (conversations | thread | customer panel = ประวัติออเดอร์+แท็ก) · tag ลูกค้า = customers.tags + PATCH /admin/customers/:id/tags · ที่เหลือ = LINE ส่ง/รับจริง (SETUP-1)
 - US-40 chat รวมทุกแบรนด์ (EP-12): GET /admin/chat/conversations ไม่ส่ง brandId = inbox รวมทุกแบรนด์ที่ admin มีสิทธิ์ (ส่ง brandId = กรองแบรนด์เดียว เดิม) · ทุกห้อง+thread ติด brandId/brandName · UI: BrandChip สีตามชื่อแบรนด์ + header "คุยผ่าน OA: X" + composer placeholder บอก OA + dropdown กรองแบรนด์ (โชว์เมื่อ >1 แบรนด์) · ตอบกลับ route ผ่าน OA ของแบรนด์นั้น (conv.brandId ไม่ใช่ตัวเลือกแบรนด์ด้านบน)
@@ -36,12 +46,13 @@ Module ใน `apps/api/src/modules/`:
 - US-44 จัดการครัว (EP-12): `kitchens` module (ย้ายจาก brands) — `GET /admin/kitchens` (รายละเอียด lat/lng/รัศมี/fee/brandCount, owner/manager), `POST`/`PATCH` (owner) · สร้างครัว provision flat DeliveryFeeRule ให้สั่งได้ทันที · แก้ flatFee = ปิดกฎเดิม+สร้าง flat ใหม่ · UI KitchenManager card ใน Settings
 - US-38 dashboard รวม merchant (EP-12): `GET /admin/reports/merchant-daily` (ไม่รับ brandId, รวม admin.brandIds) = total + per-brand (count>0, เรียง revenue) · Dashboard section "รวมทุกแบรนด์" + ตาราง BrandChip (โชว์เมื่อ >1 แบรนด์มีออเดอร์)
 - US-39 LIFF theme ต่อแบรนด์ (EP-12): `GET /brand/:brandId` (public) คืน name/logoUrl/theme · brand update รับ `theme` Json ({primaryColor}) · admin BrandManager ปุ่ม 🎨 ธีม (โลโก้ URL + color picker) · LIFF โหลด getBrand → หัวเว็บใช้ `--brand-primary` + โลโก้ + ชื่อแบรนด์ + document.title (ชิมชีวา=ส้ม default, A La Carte=เข้ม) · **EP-12 ครบทุก subtask**
-- **หน้าตั้งค่า LINE OA** (US-25 บางส่วน/SETUP-1 ส่วน B): admin Settings การ์ด "เชื่อมต่อ LINE OA" (owner) → `line-config` module GET/PUT/POST test `/admin/line-config` · GET ไม่คืน secret/token (แค่ hasX + configured + webhookUrl) · owner เสียบ Channel ID/secret/token/LIFF ID เองได้ ไม่ต้องแก้ .env · `LineClient.getBotInfo` ทดสอบ token · env `PUBLIC_API_URL` ประกอบ webhook URL · TODO: encrypt secret/token จริง
-- **admin UI ครบ 8 หน้า** (feature-complete): Dashboard (สรุป+date picker เลือกวัน US-13), Orders (สถานะ/ยกเลิก/COD/realtime/⬇CSV export), Chat, **ส่งข่าวสาร/Broadcast** (US-18 — 3 แท็บ: ส่ง(เลือก content+audience+preview reach) / คลังข้อความ / กลุ่มเป้าหมาย(rule builder+presets), ซ่อนจาก staff), Menu (**CRUD เต็ม**: เพิ่ม/แก้/ลบ+หมวด+รูป US-14 · GET /admin/menu/categories), Customers, Users&RBAC(owner), Settings · US-13/14 done · US-19 CSV แล้ว (margin/breakeven ยัง — รอ field ต้นทุนต่อเมนู)
-- **CI** `.github/workflows/ci.yml`: งาน `e2e` (postgis+redis→migrate→seed→boot→`apps/api/test/e2e.mjs` 33 เช็ค fetch ล้วน) ปิดหนี้ CTO · รัน local: `npm run test:e2e -w apps/api`
+- **หน้าตั้งค่า LINE OA** (US-25 บางส่วน/SETUP-1 ส่วน B): admin Settings การ์ด "เชื่อมต่อ LINE OA" (owner) → `line-config` module GET/PUT/POST test `/admin/line-config` · GET ไม่คืน secret/token (แค่ hasX + configured + webhookUrl) · owner เสียบ Channel ID/secret/token/LIFF ID เองได้ ไม่ต้องแก้ .env · `LineClient.getBotInfo` ทดสอบ token · env `PUBLIC_API_URL` ประกอบ webhook URL · encrypt secret/token แล้ว (ดู SEC-1 ด้านล่าง)
+- **admin UI ครบ 8 หน้า** (feature-complete): Dashboard (สรุป+date picker เลือกวัน US-13), Orders (สถานะ/ยกเลิก/COD/realtime/⬇CSV export), Chat, **ส่งข่าวสาร/Broadcast** (US-18 — 3 แท็บ: ส่ง(เลือก content+audience+preview reach) / คลังข้อความ / กลุ่มเป้าหมาย(rule builder+presets), ซ่อนจาก staff), Menu (**CRUD เต็ม**: เพิ่ม/แก้/ลบ+หมวด+รูป US-14 · GET /admin/menu/categories), Customers, Users&RBAC(owner), Settings · US-13/14 done · **US-19 done** (CSV + margin/breakeven)
+- **CI** `.github/workflows/ci.yml`: งาน `e2e` (postgis+redis→migrate→seed→boot→`apps/api/test/e2e.mjs` ~98 เช็ค fetch ล้วน) ปิดหนี้ CTO · รัน local: `npm run test:e2e -w apps/api`
 
 - US-45 roles kitchen/chat_agent (EP-13): AdminRole + kitchen (เห็นแค่ KDS+ไล่สถานะ) / chat_agent (เห็นแค่แชต) · migration 0010 · brand-scoped (staff/kitchen/chat_agent ต้องผูก brandIds, resolveBrandIds คืน assigned) · API gate: chat→+chat_agent, kitchen/admin-orders→+kitchen, customers(PII)/reports→ตัด kitchen/chat_agent (class @Roles) · admin NAV ต่อ role (roles[] ต่อเมนู + auto-redirect เมนูแรก) · Users dropdown + brand requirement · menu/store ยังเปิดทุก admin role (low-sev, documented)
 - US-46 chat presence (EP-13): `chat-presence.service.ts` in-memory Map<customerId, viewers> TTL 12s · `POST /admin/chat/:customerId/presence` heartbeat คืน viewers คนอื่น · Chat.tsx heartbeat ทุก 8s ระหว่างเปิดห้อง → โชว์ "👁 X กำลังดูห้องนี้อยู่" ใน thread header (กันตอบชนกัน เบา ไม่ต้อง assignment)
+- US-19 margin/คุ้มทุน: pure `reports/margin.ts` — `summarizeMargin` (แยกค่าส่งออกจาก contribution เพราะจ่ายไรเดอร์ต่อ · **`costCoverage`** % กล่องที่มีข้อมูลต้นทุน) · `computeBreakeven` (กล่อง/วัน = fixedCostDaily ÷ contributionPerBox, ปัดขึ้น · คืน `null`+`reason` เมื่อยังไม่ตั้งค่าคงที่/ยังไม่กรอกต้นทุน/contribution ≤ 0 — **ไม่เดาตัวเลข**) · `marginByMenu` · 19 tests · API `GET /admin/reports/margin` + `PATCH /admin/reports/fixed-cost` (owner) · UI: `MarginCard.tsx` ใน Dashboard (แถบคืบหน้าเทียบจุดคุ้มทุน + แบนเนอร์เตือนเมื่อ coverage < 100%) + หน้า Menu มีช่องต้นทุน + คอลัมน์กำไร + live preview เตือนต้นทุน > ราคาขาย · ⚠️ `getPublicMenu` ใช้ `select` ชัดเจน **ห้ามคืน costPrice ให้ลูกค้า**
 - SEC-1 encrypt LINE creds at-rest (EP-13): `src/common/crypto.ts` AES-256-GCM (`encryptSecret`/`decryptSecret`, รูปแบบ `v1:iv:tag:ct` base64) · คีย์ env `ENCRYPTION_KEY` (hash→32B) · ไม่มีคีย์ (dev/CI) = passthrough · backward-compat: ค่า plaintext เดิม (ไม่มี prefix v1:) อ่านออกตรงๆ · wire ที่ line-config.service (encrypt เขียน) + line.client.config (decrypt อ่าน) · main.ts เตือนถ้า prod ไม่ตั้งคีย์ · ⚠️ prod ต้องตั้ง ENCRYPTION_KEY + ห้ามเปลี่ยนหลังมีข้อมูล (ถอดไม่ออก) · unit 7 tests (round-trip/tamper/legacy)
 
 **Guards** (`src/common/guards/`): `JwtAuthGuard` (customer Bearer JWT — ผูก orders) · `AdminJwtGuard` (admin Bearer JWT, secret แยก `ADMIN_JWT_SECRET`, fail-fast ถ้าไม่ตั้ง) + `RolesGuard` (`@Roles`) ป้องกัน `/api/admin/*` — **ห้าม**ใช้ customer JWT ป้องกัน endpoint แอดมิน · ทุก endpoint admin ที่รับ brandId ต้องผ่าน `assertBrandAccess(admin, brandId)` (กันข้ามแบรนด์) · `AdminKeyGuard` เลิกใช้แล้ว (แทนด้วย admin login US-29)
@@ -61,7 +72,7 @@ npm run prisma:migrate -w apps/api   # apply migration (ต้องมี DB)
 npm run prisma:seed -w apps/api      # seed แบรนด์ชิมชีวา + เมนู + เขตส่งตัวอย่าง
 ```
 
-**CI** (`.github/workflows/ci.yml`): 2 งาน — `build` (npm ci + build + jest ทุก workspace) และ `e2e` (postgis+redis service → migrate deploy → seed → boot API → `test/e2e.mjs` 28 เช็ค). E2E ครอบกติกาเหล็ก: คิดเงิน server, เช็คเขต 422, idempotent, tenant isolation, RBAC (customer JWT เข้า admin ไม่ได้), status transition, พักร้าน→422. ไม่พึ่ง lib นอก (fetch ล้วน).
+**CI** (`.github/workflows/ci.yml`): 2 งาน — `build` (npm ci + build + jest ทุก workspace) และ `e2e` (postgis+redis service → migrate deploy → seed → boot API → `test/e2e.mjs` ~98 เช็ค). E2E ครอบกติกาเหล็ก: คิดเงิน server, เช็คเขต 422, idempotent, tenant isolation, RBAC (customer JWT เข้า admin ไม่ได้), status transition, พักร้าน→422. ไม่พึ่ง lib นอก (fetch ล้วน).
 
 ## ข้อห้าม / กติกาเหล็ก
 1. **ทุก query DB ต้องกรอง tenant key** (merchant_id/brand_id) ตั้งแต่ migration แรก — ห้ามมีตาราง business data ที่ไม่มี tenant key
@@ -73,15 +84,19 @@ npm run prisma:seed -w apps/api      # seed แบรนด์ชิมชีว
 7. Push message ผ่านคิว BullMQ + กันส่งซ้ำด้วย `message_logs` (โควตา LINE มีจำกัด)
 
 ## การตัดสินใจที่ยังค้าง (ห้ามเดาเอง — ดู task กลุ่ม PRE-DEV)
-- **Schema tenant**: merchants/stores (แผน v2.0) vs brands/kitchens (ชิมชีวา) → แนวโน้มรวมเป็น merchant → brands → kitchens แต่ต้องเคาะใน task "DOC: Prisma schema + ERD" ก่อนเขียน model จริง — `apps/api/prisma/schema.prisma` จึงยังว่างโดยตั้งใจ
-- **ADR-02**: เช็คเขตแบบ Haversine radius ก่อน vs PostGIS เต็มรูปแบบตั้งแต่แรก
-- **SETUP-4**: payment gateway (Omise/2C2P/GB Prime Pay)
-- **ADR-03**: hosting (Railway/Render/Cloud Run)
+- **SETUP-4**: payment gateway (Omise/2C2P/GB Prime Pay) — บล็อก US-06 PromptPay
+- **ADR-02** (ค้างแต่ตัดสินโดยพฤตินัยแล้ว): ship **Haversine radius** (`delivery/geo.ts`) ส่วน PostGIS ยังไม่ได้ใช้จริงแม้เปิด extension + เก็บ geometry ไว้แล้ว — ถ้าจะปิด ADR ให้เขียนยืนยันทางที่ใช้อยู่
 
-## การตัดสินใจที่เคาะแล้ว (ตอนตั้งโครง 8 ก.ค. 2026)
+## การตัดสินใจที่เคาะแล้ว
 - ADR-01: **NestJS** (ไม่ใช่ Express เปล่า) — โครงสร้าง module ชัด เหมาะกับ solo dev + AI ทำงานหลาย session
 - ADR-04: **monorepo npm workspaces** (เครื่อง dev ไม่มี pnpm) — shared types อยู่ `packages/shared`
 - DB: PostgreSQL + **PostGIS** (docker image `postgis/postgis:16-3.4`) + Prisma
+- **ADR-0005 tenant schema** (`docs/adr/0005-tenant-schema.md`, Accepted): **Merchant → Brand → Kitchen** — Brand = tenant key ของ app (`brandId`) · Kitchen = จุดผลิต+เขตส่ง+กฎค่าส่ง แชร์หลายแบรนด์ผ่าน `BrandKitchen` (m:n) · เฟส A = 1 Merchant, N Brand, 1 Kitchen · **`schema.prisma` เขียนครบแล้ว 20 models** (ไม่ใช่ไฟล์ว่างอีกต่อไป)
+- ADR-03 hosting: **Hetzner Cloud (CX22) + Docker + Caddy** ที่มีอยู่เดิม โดเมน `jivecode.click` — โค้ด/compose/Caddyfile พร้อมแล้ว (`docs/deploy-hetzner.md`) เหลือรันจริง = task `DEPLOY-1`
+- ADR-05: multi-tenant **SaaS-first** (isolate ด้วย merchantId) + dedicated-instance เป็นทางเลือกลูกค้าใหญ่
+- ADR-06: LINE OA = **1 Brand : 1 OA** (creds เก็บที่ Brand) — defer LineChannel/shared-OA จนกว่าจะมีดีมานด์
+- ADR-07: **House of Brands** (1 แบรนด์ 1 OA แยก identity) + backend รวม
+- ⚠️ ADR-05/06/07 ปิดใน PM แล้วแต่**ยังไม่มีไฟล์ใน `docs/adr/`** (มีแค่ 0005) — เนื้อหาอยู่ใน Knowledge Board
 
 ## Conventions
 - TypeScript strict ทุก workspace
