@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from './line.client';
 import { encryptSecret as encrypt } from '../../common/crypto'; // SEC-1: AES-256-GCM at-rest
+import { buildRichMenu, validateRichMenu, RICH_MENU_WIDTH, RICH_MENU_HEIGHT_TALL } from './richmenu'; // US-10
 
 @Injectable()
 export class LineConfigService {
@@ -65,4 +66,69 @@ export class LineConfigService {
   async test(brandId: string) {
     return this.line.getBotInfo(brandId);
   }
-}
+
+  /** US-10: ดูตัวอย่าง Rich Menu ที่จะสร้าง (ไม่ยิง LINE) — เอาไว้ตรวจ layout ก่อนใช้จริง */
+  async previewRichMenu(brandId: string) {
+    const b = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { name: true, liffId: true, richMenuId: true },
+    });
+    if (!b) throw new NotFoundException('ไม่พบแบรนด์');
+    const menu = buildRichMenu({ liffId: b.liffId, brandName: b.name });
+    const check = validateRichMenu(menu);
+    return {
+      currentRichMenuId: b.richMenuId,
+      hasLiff: !!b.liffId,
+      // ยังไม่มี LIFF = เมนูจะตกไปใช้ปุ่มส่งข้อความ ควรเตือน owner ก่อนสร้าง
+      warning: b.liffId ? undefined : 'ยังไม่ได้ตั้ง LIFF ID — ปุ่มสั่งอาหารจะใช้การส่งข้อความแทน deep link',
+      valid: check.ok,
+      errors: check.errors,
+      menu,
+      imageSpec: {
+        width: RICH_MENU_WIDTH,
+        height: RICH_MENU_HEIGHT_TALL,
+        maxBytes: 1024 * 1024,
+        formats: ['image/jpeg', 'image/png'],
+      },
+    };
+  }
+
+  /**
+   * US-10: สร้าง Rich Menu + อัปโหลดรูป + ตั้งเป็นเมนูเริ่มต้น
+   * ลบตัวเก่าทิ้งหลังตั้งตัวใหม่สำเร็จ (โควตา LINE 1000 เมนู/channel)
+   * ถ้าอัปโหลดรูปพัง → ลบเมนูที่เพิ่งสร้างทิ้ง ไม่ทิ้งขยะไว้ที่ LINE
+   */
+  async applyRichMenu(brandId: string, imageUrl: string) {
+    const b = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { name: true, liffId: true, richMenuId: true },
+    });
+    if (!b) throw new NotFoundException('ไม่พบแบรนด์');
+
+    const menu = buildRichMenu({ liffId: b.liffId, brandName: b.name });
+    const check = validateRichMenu(menu);
+    if (!check.ok) throw new BadRequestException(`Rich Menu ไม่ถูกต้อง: ${check.errors.join(', ')}`);
+
+    const created = await this.line.createRichMenu(brandId, menu);
+    if (!created.ok || !created.richMenuId) {
+      throw new BadRequestException(created.error ?? 'สร้าง Rich Menu ไม่สำเร็จ');
+    }
+
+    const uploaded = await this.line.uploadRichMenuImage(brandId, created.richMenuId, imageUrl);
+    if (!uploaded.ok) {
+      await this.line.deleteRichMenu(brandId, created.richMenuId); // ไม่ทิ้งเมนูไร้รูปค้างไว้
+      throw new BadRequestException(uploaded.error ?? 'อัปโหลดรูปไม่สำเร็จ');
+    }
+
+    const applied = await this.line.setDefaultRichMenu(brandId, created.richMenuId);
+    if (!applied.ok) {
+      await this.line.deleteRichMenu(brandId, created.richMenuId);
+      throw new BadRequestException(applied.error ?? 'ตั้งเมนูเริ่มต้นไม่สำเร็จ');
+    }
+
+    // สำเร็จแล้วค่อยลบตัวเก่า (ถ้าลบก่อนแล้วตัวใหม่พัง ลูกค้าจะไม่มีเมนูเลย)
+    if (b.richMenuId) await this.line.deleteRichMenu(brandId, b.richMenuId);
+
+    await this.prisma.brand.update({ where: { id: brandId }, data: { richMenuId: created.richMenuId } });
+    return { ok: true, richMenuId: created.richMenuId, replaced: b.richMenuId ?? null };
+  }

@@ -98,6 +98,70 @@ export class LineClient {
     return { ok: true, name: j.displayName, userId: j.userId };
   }
 
+  // ─────────────────────────── Rich Menu (US-10) ───────────────────────────
+
+  /** สร้าง rich menu (ยังไม่มีรูป) — คืน richMenuId */
+  async createRichMenu(brandId: string, menu: unknown): Promise<{ ok: boolean; richMenuId?: string; error?: string; skipped?: boolean }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true, error: 'ยังไม่ได้ตั้ง Channel access token' };
+    const res = await fetch('https://api.line.me/v2/bot/richmenu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+      body: JSON.stringify(menu),
+    });
+    if (!res.ok) return { ok: false, error: `LINE ตอบ ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    const j = (await res.json()) as { richMenuId: string };
+    return { ok: true, richMenuId: j.richMenuId };
+  }
+
+  /**
+   * อัปโหลดรูป rich menu จาก URL — LINE รับเฉพาะ jpeg/png ≤ 1MB ขนาดตรงสเปค
+   * ใช้ endpoint api-data.line.me (คนละโดเมนกับ API ปกติ — พลาดตรงนี้บ่อย)
+   */
+  async uploadRichMenuImage(brandId: string, richMenuId: string, imageUrl: string): Promise<{ ok: boolean; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, error: 'ยังไม่ได้ตั้ง Channel access token' };
+
+    const img = await fetch(imageUrl).catch(() => null);
+    if (!img?.ok) return { ok: false, error: 'โหลดรูปจาก URL ไม่ได้' };
+    const contentType = img.headers.get('content-type') ?? '';
+    if (!/image\/(jpeg|png)/.test(contentType)) {
+      return { ok: false, error: `รูปต้องเป็น jpeg/png (ได้ ${contentType || 'ไม่ทราบชนิด'})` };
+    }
+    const buf = Buffer.from(await img.arrayBuffer());
+    if (buf.byteLength > 1024 * 1024) return { ok: false, error: 'รูปใหญ่เกิน 1MB' };
+
+    const res = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType, Authorization: `Bearer ${channelAccessToken}` },
+      body: new Uint8Array(buf),
+    });
+    if (!res.ok) return { ok: false, error: `อัปโหลดรูปไม่สำเร็จ ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    return { ok: true };
+  }
+
+  /** ตั้งเป็นเมนูเริ่มต้นของทุกคนที่เพิ่มเพื่อน */
+  async setDefaultRichMenu(brandId: string, richMenuId: string): Promise<{ ok: boolean; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, error: 'ยังไม่ได้ตั้ง Channel access token' };
+    const res = await fetch(`https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `ตั้งเมนูเริ่มต้นไม่สำเร็จ ${res.status}` };
+  }
+
+  /** ลบ rich menu (ใช้ตอนสร้างใหม่ทับของเก่า กันเมนูค้างเต็มโควตา 1000 อัน) */
+  async deleteRichMenu(brandId: string, richMenuId: string): Promise<{ ok: boolean }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false };
+    const res = await fetch(`https://api.line.me/v2/bot/richmenu/${richMenuId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    return { ok: res.ok };
+  }
+
   /** ตอบกลับด้วย replyToken (จาก webhook) — ฟรีกว่า push ไม่กินโควตา */
   async replyText(brandId: string, replyToken: string, text: string): Promise<{ ok: boolean; skipped?: boolean }> {
     const { channelAccessToken } = await this.config(brandId);

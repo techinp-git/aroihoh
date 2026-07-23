@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { LineConfigService } from './line-config.service';
 import { LineService } from './line.service';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
@@ -13,6 +13,11 @@ class UpdateLineConfigDto {
   @IsOptional() @IsString() @MaxLength(64) liffId?: string;
   @IsOptional() @IsString() @MaxLength(256) channelSecret?: string;
   @IsOptional() @IsString() @MaxLength(512) channelAccessToken?: string;
+}
+
+// US-10: รูป Rich Menu — ต้องเป็น URL สาธารณะที่ LINE (และ server เรา) โหลดได้
+class ApplyRichMenuDto {
+  @IsString() @IsNotEmpty() @IsUrl({ require_protocol: true }) @MaxLength(1024) imageUrl: string;
 }
 
 // ตั้งค่า LINE เป็นความลับระดับแบรนด์ (credential) → owner เท่านั้น
@@ -48,5 +53,23 @@ export class LineConfigController {
   test(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
     assertBrandAccess(admin, brandId);
     return this.config.test(brandId);
+  }
+
+  // US-10: ดูตัวอย่าง Rich Menu ที่จะสร้าง (ไม่ยิง LINE) — ตรวจ layout + สเปครูปก่อน
+  @Get('richmenu/preview')
+  previewRichMenu(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    assertBrandAccess(admin, brandId);
+    return this.config.previewRichMenu(brandId);
+  }
+
+  // US-10: สร้าง + อัปโหลดรูป + ตั้งเป็นเมนูเริ่มต้น (ยิง LINE จริง)
+  @Post('richmenu')
+  applyRichMenu(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Body() dto: ApplyRichMenuDto,
+  ) {
+    assertBrandAccess(admin, brandId);
+    return this.config.applyRichMenu(brandId, dto.imageUrl);
   }
 }
