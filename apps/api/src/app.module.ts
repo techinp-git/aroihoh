@@ -19,6 +19,7 @@ import { BroadcastsModule } from './modules/broadcasts/broadcasts.module';
 import { ContentModule } from './modules/content/content.module';
 import { AudiencesModule } from './modules/audiences/audiences.module';
 import { LineModule } from './modules/line/line.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { LineModule } from './modules/line/line.module';
     ContentModule,
     AudiencesModule,
     LineModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

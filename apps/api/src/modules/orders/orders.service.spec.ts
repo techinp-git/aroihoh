@@ -33,7 +33,12 @@ function makeService(overrides: {
     ),
   };
   const events: any = { emit: jest.fn() };
-  return { service: new OrdersService(prisma, delivery, events), prisma, delivery };
+  // US-08/09: คิวแจ้งเตือน — mock ให้เงียบ, ตัวจริงถูกเรียกแบบ fire-and-forget
+  const notify: any = {
+    notifyOrderConfirmed: jest.fn().mockResolvedValue({ queued: true }),
+    notifyStatusChanged: jest.fn().mockResolvedValue({ queued: true }),
+  };
+  return { service: new OrdersService(prisma, delivery, events, notify), prisma, delivery, notify };
 }
 
 const customer = { sub: 'cust-1', brandId: 'brand-1' };

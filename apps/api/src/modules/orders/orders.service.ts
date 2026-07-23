@@ -12,6 +12,7 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { computeOrderPricing } from './pricing';
 import { canTransition } from './status';
 import { OrderEventsService } from './order-events.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly delivery: DeliveryService,
     private readonly events: OrderEventsService,
+    private readonly notify: NotificationsService,
   ) {}
 
   private readonly orderInclude = { items: true } satisfies Prisma.OrderInclude;
@@ -83,6 +85,7 @@ export class OrdersService {
         menuItemId: m.id,
         nameSnapshot: m.name,
         unitPrice: m.price,
+        unitCost: m.costPrice, // US-19: snapshot ต้นทุน ณ ตอนสั่ง (null ถ้ายังไม่กรอก)
         qty: i.qty,
         lineTotal: m.price * i.qty,
         note: i.note,
@@ -128,6 +131,9 @@ export class OrdersService {
         orderId: created.id,
         total: created.total,
       });
+      // US-08/09: ส่งใบยืนยัน Flex ให้ลูกค้าผ่านคิว (dedupe confirm:orderId — กดซ้ำไม่ส่งซ้ำ)
+      // ห้าม await: ลูกค้าไม่ควรรอ LINE และ push พังต้องไม่ทำให้สร้างออเดอร์พัง
+      void this.notify.notifyOrderConfirmed(brandId, created.id, customerId).catch(() => undefined);
       return created;
     } catch (e) {
       // unique violation ที่ idempotencyKey
@@ -231,6 +237,10 @@ export class OrdersService {
     });
     // US-11: sync ให้ admin คนอื่นเห็นการเปลี่ยนสถานะ
     this.events.emit({ brandId, type: 'status', orderId, status: to });
+    // US-09: แจ้งลูกค้าผ่านคิว (เฉพาะสถานะสำคัญ, dedupe ที่ message_logs) — ไม่ให้ push พังทำ API พัง
+    void this.notify
+      .notifyStatusChanged(brandId, orderId, order.customerId, to)
+      .catch(() => undefined);
     return updated;
   }
 }

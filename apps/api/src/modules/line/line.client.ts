@@ -50,6 +50,30 @@ export class LineClient {
     return { ok: true };
   }
 
+  /**
+   * US-08: push Flex message (ใบยืนยันออเดอร์) — คืน { skipped } ถ้ายังไม่ผูก LINE
+   * contents = bubble จาก buildOrderConfirmFlex()
+   */
+  async pushFlex(
+    brandId: string,
+    toLineUserId: string,
+    altText: string,
+    contents: unknown,
+  ): Promise<{ ok: boolean; skipped?: boolean }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+      body: JSON.stringify({ to: toLineUserId, messages: [{ type: 'flex', altText, contents }] }),
+    });
+    if (!res.ok) {
+      this.log.warn(`pushFlex failed ${res.status} for brand ${brandId}`); // ห้าม log เนื้อหา/PII (PDPA #6)
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+
   /** ดึงโปรไฟล์ลูกค้า (displayName/รูป) — คืน null ถ้ายังไม่ผูก LINE หรือดึงไม่ได้ */
   async getProfile(brandId: string, userId: string): Promise<{ displayName?: string; pictureUrl?: string } | null> {
     const { channelAccessToken } = await this.config(brandId);
