@@ -3,14 +3,17 @@ import {
   listOrders,
   dailyReport,
   merchantDailyReport,
+  marginReport,
   baht,
   STATUS_TH,
   ACTIVE_STATUSES,
   type Order,
   type DailyReport,
   type MerchantDaily,
+  type MarginReport,
 } from '../api';
 import BrandChip from '../components/BrandChip';
+import MarginCard from '../components/MarginCard';
 
 // วันที่วันนี้ตามเขตกรุงเทพ (YYYY-MM-DD) สำหรับ default + ค่าสูงสุดของ date picker
 const todayBangkok = () =>
@@ -20,6 +23,7 @@ export default function Dashboard({ brandId }: { brandId: string }) {
   const [report, setReport] = useState<DailyReport | null>(null);
   const [recent, setRecent] = useState<Order[]>([]);
   const [merchant, setMerchant] = useState<MerchantDaily | null>(null);
+  const [margin, setMargin] = useState<MarginReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [date, setDate] = useState(todayBangkok());
@@ -53,6 +57,22 @@ export default function Dashboard({ brandId }: { brandId: string }) {
       alive = false;
     };
   }, [date]);
+
+  // US-19: มาร์จิ้น + จุดคุ้มทุน (เงียบถ้าโหลดไม่ได้ — ไม่ให้ dashboard พังทั้งหน้า)
+  useEffect(() => {
+    if (!brandId) return;
+    let alive = true;
+    marginReport(brandId, date)
+      .then((m) => alive && setMargin(m))
+      .catch(() => alive && setMargin(null));
+    return () => {
+      alive = false;
+    };
+  }, [brandId, date]);
+
+  const reloadMargin = () => {
+    if (brandId) marginReport(brandId, date).then(setMargin).catch(() => {});
+  };
 
   const active = report
     ? Object.entries(report.byStatus)
@@ -96,6 +116,9 @@ export default function Dashboard({ brandId }: { brandId: string }) {
           <div className="stat-value accent">{v(baht(report?.revenue ?? 0))}</div>
         </div>
       </section>
+
+      {/* US-19: มาร์จิ้น/กล่อง + จุดคุ้มทุนรายวัน */}
+      {margin && <MarginCard data={margin} brandId={brandId} onSaved={reloadMargin} />}
 
       {/* US-38: สรุปรวมทุกแบรนด์ (merchant) — โชว์เมื่อมี >1 แบรนด์ที่มีออเดอร์ */}
       {merchant && merchant.brands.length > 1 && (

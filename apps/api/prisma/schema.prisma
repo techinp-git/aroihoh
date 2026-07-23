@@ -50,6 +50,9 @@ model Brand {
   isActive   Boolean @default(true)
   codEnabled Boolean @default(true) // US-07: เปิด/ปิดรับเก็บเงินปลายทาง
 
+  // US-19: ค่าใช้จ่ายคงที่ต่อวัน (สตางค์) — ค่าเช่า/คน/การตลาด เฉลี่ยต่อวัน ใช้หาจุดคุ้มทุน
+  fixedCostDaily Int?
+
   // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
   lineChannelId        String?
   lineChannelSecretEnc String?
@@ -231,6 +234,7 @@ model MenuItem {
   name        String
   description String?
   price       Int // สตางค์
+  costPrice   Int? // US-19: ต้นทุนวัตถุดิบต่อจาน (สตางค์) — null = ยังไม่กรอก
   imageUrl    String?
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -311,6 +315,7 @@ model OrderItem {
   menuItemId   String
   nameSnapshot String // เก็บชื่อ ณ ตอนสั่ง กันเมนูแก้ทีหลัง
   unitPrice    Int
+  unitCost     Int? // US-19: snapshot ต้นทุน ณ ตอนสั่ง (แก้ต้นทุนทีหลังไม่กระทบรายงานเก่า)
   qty          Int
   lineTotal    Int
   note         String?

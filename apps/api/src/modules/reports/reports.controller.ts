@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -28,5 +28,24 @@ export class ReportsController {
   @Get('merchant-daily')
   merchantDaily(@CurrentAdmin() admin: AdminJwt, @Query('date') date?: string) {
     return this.reports.merchantDaily(admin.brandIds, date);
+  }
+
+  // US-19: มาร์จิ้น/กล่อง + จุดคุ้มทุนรายวัน
+  @Get('margin')
+  margin(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string, @Query('date') date?: string) {
+    assertBrandAccess(admin, brandId);
+    return this.reports.marginDaily(brandId, date);
+  }
+
+  // US-19: ตั้งค่าใช้จ่ายคงที่ต่อวัน (สตางค์) — owner เท่านั้น เพราะกระทบตัวเลขตัดสินใจธุรกิจ
+  @Patch('fixed-cost')
+  @Roles('owner')
+  setFixedCost(
+    @CurrentAdmin() admin: AdminJwt,
+    @Body() body: { brandId: string; fixedCostDaily: number | null },
+  ) {
+    assertBrandAccess(admin, body.brandId);
+    const v = body.fixedCostDaily;
+    return this.reports.setFixedCost(body.brandId, v === null || v === undefined ? null : Math.max(0, Math.round(v)));
   }
 }

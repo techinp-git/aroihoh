@@ -91,6 +91,7 @@ export interface DailyReport {
 }
 export interface MenuItem {
   id: string; name: string; description: string | null; price: number;
+  costPrice?: number | null; // US-19 (admin เท่านั้น — LIFF ไม่ได้รับ field นี้)
   imageUrl: string | null; isAvailable: boolean; categoryId: string | null;
 }
 export interface MenuCategory {
@@ -184,13 +185,16 @@ export const createMenuCategory = (brandId: string, name: string, sortOrder?: nu
   });
 
 export interface MenuItemInput {
-  name?: string; description?: string | null; price?: number;
+  name?: string; description?: string | null; price?: number; costPrice?: number | null;
   imageUrl?: string | null; categoryId?: string | null;
 }
 
 export const createMenuItem = (
   brandId: string,
-  body: { name: string; price: number; description?: string; imageUrl?: string; categoryId?: string },
+  body: {
+    name: string; price: number; costPrice?: number;
+    description?: string; imageUrl?: string; categoryId?: string;
+  },
 ) => adminFetch<MenuItem>('/admin/menu/items', {
   method: 'POST',
   body: JSON.stringify({ brandId, ...body }),
@@ -220,6 +224,42 @@ export interface MerchantDaily {
 }
 export const merchantDailyReport = (date?: string) =>
   adminFetch<MerchantDaily>('/admin/reports/merchant-daily' + (date ? `?date=${date}` : ''));
+
+// US-19: มาร์จิ้น/กล่อง + จุดคุ้มทุนรายวัน
+export interface MarginSummary {
+  orders: number; boxes: number;
+  revenue: number; foodRevenue: number; deliveryRevenue: number; foodCost: number;
+  grossProfit: number; marginPct: number;
+  avgPricePerBox: number; avgCostPerBox: number; contributionPerBox: number;
+  costCoverage: number; boxesMissingCost: number;
+}
+export interface Breakeven {
+  boxesPerDay: number | null; revenuePerDay: number | null;
+  actualBoxes: number; gap: number | null; reached: boolean;
+  netProfit: number | null; reason?: string;
+}
+export interface MenuMarginRow {
+  name: string; qty: number; revenue: number; cost: number;
+  profit: number; marginPct: number; hasCost: boolean;
+}
+export interface MarginReport {
+  date: string;
+  fixedCostDaily: number | null;
+  summary: MarginSummary;
+  breakeven: Breakeven;
+  byMenu: MenuMarginRow[];
+}
+
+export const marginReport = (brandId: string, date?: string) =>
+  adminFetch<MarginReport>(
+    `/admin/reports/margin?brandId=${encodeURIComponent(brandId)}` + (date ? `&date=${date}` : ''),
+  );
+
+export const setFixedCost = (brandId: string, fixedCostDaily: number | null) =>
+  adminFetch<{ ok: boolean; fixedCostDaily: number | null }>('/admin/reports/fixed-cost', {
+    method: 'PATCH',
+    body: JSON.stringify({ brandId, fixedCostDaily }),
+  });
 
 export const markPaid = (brandId: string, orderId: string) =>
   adminFetch<{ paymentStatus: string; alreadyPaid: boolean }>(

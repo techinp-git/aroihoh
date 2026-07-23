@@ -18,12 +18,20 @@ import {
 type FormState = {
   name: string;
   price: string; // บาท (แปลงเป็นสตางค์ตอนบันทึก)
+  costPrice: string; // US-19: ต้นทุนวัตถุดิบ บาท ('' = ยังไม่กรอก)
   description: string;
   imageUrl: string;
   categoryId: string; // '' = ไม่มีหมวด
 };
 
-const EMPTY: FormState = { name: '', price: '', description: '', imageUrl: '', categoryId: '' };
+const EMPTY: FormState = { name: '', price: '', costPrice: '', description: '', imageUrl: '', categoryId: '' };
+
+/** US-19: มาร์จิ้นต่อเมนู — ช่วยเห็นทันทีว่าตั้งราคาไหว/ไม่ไหว */
+function marginOf(it: MenuItem): { pct: number; profit: number } | null {
+  if (it.costPrice === null || it.costPrice === undefined || it.price <= 0) return null;
+  const profit = it.price - it.costPrice;
+  return { pct: Math.round((profit / it.price) * 1000) / 10, profit };
+}
 
 export default function Menu({ brandId }: { brandId: string }) {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -106,6 +114,7 @@ export default function Menu({ brandId }: { brandId: string }) {
     setF({
       name: it.name,
       price: (it.price / 100).toString(),
+      costPrice: it.costPrice != null ? (it.costPrice / 100).toString() : '',
       description: it.description || '',
       imageUrl: it.imageUrl || '',
       categoryId: it.categoryId || '',
@@ -125,6 +134,15 @@ export default function Menu({ brandId }: { brandId: string }) {
     const bahtVal = Number(f.price);
     if (!Number.isFinite(bahtVal) || bahtVal < 0) return setError('ราคาไม่ถูกต้อง');
     const price = Math.round(bahtVal * 100);
+
+    // US-19: ต้นทุน — ว่างได้ (ยังไม่รู้ต้นทุน) แต่ถ้ากรอกต้องเป็นตัวเลข ≥ 0
+    let costPrice: number | null = null;
+    if (f.costPrice.trim() !== '') {
+      const c = Number(f.costPrice);
+      if (!Number.isFinite(c) || c < 0) return setError('ต้นทุนไม่ถูกต้อง');
+      costPrice = Math.round(c * 100);
+    }
+
     setBusy('form');
     setError('');
     try {
@@ -132,6 +150,7 @@ export default function Menu({ brandId }: { brandId: string }) {
         await updateMenuItem(brandId, editing.id, {
           name,
           price,
+          costPrice,
           description: f.description.trim() || null,
           imageUrl: f.imageUrl.trim() || null,
           categoryId: f.categoryId || null,
@@ -140,6 +159,7 @@ export default function Menu({ brandId }: { brandId: string }) {
         await createMenuItem(brandId, {
           name,
           price,
+          ...(costPrice !== null ? { costPrice } : {}),
           description: f.description.trim() || undefined,
           imageUrl: f.imageUrl.trim() || undefined,
           categoryId: f.categoryId || undefined,
@@ -243,9 +263,30 @@ export default function Menu({ brandId }: { brandId: string }) {
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="เช่น กะเพราไก่ไข่ดาว" />
             </label>
             <label className="field" style={{ flex: 1, minWidth: 100 }}>
-              <span>ราคา (บาท)</span>
+              <span>ราคาขาย (บาท)</span>
               <input type="number" min="0" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="60" />
             </label>
+            <label className="field" style={{ flex: 1, minWidth: 100 }}>
+              <span>ต้นทุน (บาท)</span>
+              <input
+                type="number"
+                min="0"
+                value={f.costPrice}
+                onChange={(e) => setF({ ...f, costPrice: e.target.value })}
+                placeholder="30"
+              />
+            </label>
+          </div>
+          {/* US-19: โชว์มาร์จิ้นสดตอนกรอก — เห็นทันทีว่าตั้งราคาไหวไหม */}
+          {f.price !== '' && f.costPrice !== '' && Number(f.price) > 0 && (
+            <div style={{ fontSize: 13, color: Number(f.costPrice) >= Number(f.price) ? '#c92a2a' : '#2b8a3e' }}>
+              กำไรต่อจาน {(Number(f.price) - Number(f.costPrice)).toLocaleString()} บาท (
+              {Math.round(((Number(f.price) - Number(f.costPrice)) / Number(f.price)) * 1000) / 10}%)
+              {Number(f.costPrice) >= Number(f.price) && ' — ต้นทุนสูงกว่าราคาขาย!'}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: '#868e96', marginTop: -4 }}>
+            ต้นทุนไม่บังคับ แต่ถ้าไม่กรอกจะคำนวณมาร์จิ้น/จุดคุ้มทุนไม่ได้ · ลูกค้าไม่เห็นตัวเลขนี้
           </div>
           <label className="field">
             <span>หมวด</span>
@@ -299,6 +340,7 @@ export default function Menu({ brandId }: { brandId: string }) {
                   <tr>
                     <th>เมนู</th>
                     <th>ราคา</th>
+                    <th>ต้นทุน / กำไร</th>
                     <th>เปิดขาย</th>
                     <th style={{ textAlign: 'right' }}>จัดการ</th>
                   </tr>
@@ -319,6 +361,18 @@ export default function Menu({ brandId }: { brandId: string }) {
                         </div>
                       </td>
                       <td className="total">{baht(it.price)}</td>
+                      {/* US-19: ต้นทุน + มาร์จิ้น — ยังไม่กรอกก็บอกตรง ๆ ว่าไม่รู้ */}
+                      <td>
+                        {(() => {
+                          const m = marginOf(it);
+                          if (!m) return <span style={{ color: '#adb5bd', fontSize: 13 }}>ยังไม่ได้กรอก</span>;
+                          return (
+                            <span style={{ fontSize: 13, color: m.profit <= 0 ? '#c92a2a' : '#2b8a3e' }}>
+                              {baht(it.costPrice as number)} → +{baht(m.profit)} ({m.pct}%)
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <label className="switch">
                           <input type="checkbox" checked={it.isAvailable} disabled={busy === it.id} onChange={() => toggle(it)} />

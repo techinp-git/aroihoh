@@ -29,6 +29,16 @@ export class MenuService {
         items: {
           where: { isAvailable: true },
           orderBy: { name: 'asc' },
+          // select ชัดเจน — ห้ามคืน costPrice (US-19 ต้นทุนเป็นความลับทางการค้า ไม่ส่งให้ลูกค้า)
+          select: {
+            id: true,
+            categoryId: true,
+            name: true,
+            description: true,
+            price: true,
+            imageUrl: true,
+            isAvailable: true,
+          },
         },
       },
     });
@@ -65,6 +75,7 @@ export class MenuService {
         name: dto.name,
         description: dto.description,
         price: dto.price,
+        costPrice: dto.costPrice, // US-19
         imageUrl: dto.imageUrl,
       },
     });
@@ -114,7 +125,8 @@ export class MenuService {
           await tx.menuItem.create({
             data: {
               brandId: targetBrandId, categoryId: newCat.id, name: it.name,
-              description: it.description, price: it.price, imageUrl: it.imageUrl, isAvailable: it.isAvailable,
+              description: it.description, price: it.price, costPrice: it.costPrice,
+              imageUrl: it.imageUrl, isAvailable: it.isAvailable,
             },
           });
           items++;
@@ -124,7 +136,8 @@ export class MenuService {
         await tx.menuItem.create({
           data: {
             brandId: targetBrandId, categoryId: null, name: it.name,
-            description: it.description, price: it.price, imageUrl: it.imageUrl, isAvailable: it.isAvailable,
+            description: it.description, price: it.price, costPrice: it.costPrice,
+            imageUrl: it.imageUrl, isAvailable: it.isAvailable,
           },
         });
         items++;

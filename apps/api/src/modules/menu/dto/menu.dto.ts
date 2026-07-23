@@ -25,6 +25,7 @@ export class CreateMenuItemDto {
   @IsString() @IsNotEmpty() name: string;
   @IsOptional() @IsString() description?: string;
   @IsInt() @Min(0) price: number; // สตางค์
+  @IsOptional() @IsInt() @Min(0) costPrice?: number; // US-19: ต้นทุนวัตถุดิบ (สตางค์)
   @IsOptional() @IsString() imageUrl?: string;
 }
 
@@ -32,6 +33,7 @@ export class UpdateMenuItemDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsInt() @Min(0) price?: number;
+  @IsOptional() @IsInt() @Min(0) costPrice?: number; // US-19
   @IsOptional() @IsString() imageUrl?: string;
   @IsOptional() @IsString() categoryId?: string;
 }
