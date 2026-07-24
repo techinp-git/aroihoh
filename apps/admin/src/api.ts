@@ -34,6 +34,17 @@ export const getAdminProfile = (): AdminProfile | null => {
   }
 };
 
+// token admin อายุ 12 ชม. — หมดแล้วทุก call ตอบ 401 · ล้าง auth + เด้งกลับหน้า login
+// (guard ครั้งเดียว กันหลาย request พร้อมกันสั่ง reload ซ้อน)
+let sessionExpiring = false;
+function onSessionExpired() {
+  if (sessionExpiring) return;
+  sessionExpiring = true;
+  clearAuth();
+  // hash (#/customers) ยังอยู่ → login เสร็จกลับมาหน้าเดิม · reload ให้ App เห็นว่าไม่มี token แล้ว
+  window.location.reload();
+}
+
 export async function adminFetch<T = unknown>(
   path: string,
   opts: RequestInit = {},
@@ -47,6 +58,11 @@ export async function adminFetch<T = unknown>(
     },
   });
   if (!res.ok) {
+    if (res.status === 401 && getAdminToken()) {
+      // มี token แต่ถูกปฏิเสธ = หมดอายุ/ถูกเพิกถอน → ให้ล็อกอินใหม่ ไม่โชว์ JSON ดิบ
+      onSessionExpired();
+      throw new Error('เซสชันหมดอายุ — กำลังพาไปเข้าสู่ระบบใหม่');
+    }
     let detail = '';
     try {
       detail = JSON.stringify(await res.json());
