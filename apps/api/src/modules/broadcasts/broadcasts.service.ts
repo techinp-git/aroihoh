@@ -104,7 +104,9 @@ export class BroadcastsService {
           skipDuplicates: true,
         });
       }
-      // TODO(SETUP-1/line): enqueue BullMQ job ดึง message_logs(queued) ของ broadcast นี้ → push LINE → mark sent/failed
+      // ยิงจริงอยู่ที่ POST /admin/broadcasts/:id/dispatch (หน้า Compose เรียกต่อทันทีหลัง create)
+      // แยกขั้นไว้เพราะ dispatch วนยิงทีละคน — ถ้าหลุดกลางคัน แถวที่ยัง queued กด dispatch ซ้ำได้
+      // dedupeKey บน message_logs กันส่งซ้ำให้ (#7)
       return broadcast;
     });
   }

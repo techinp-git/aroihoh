@@ -5,6 +5,10 @@ const params = new URLSearchParams(location.search);
 // brandId มาจาก URL (?brandId=) หรือ env — ใน LIFF จริงจะฝังมากับ config ของ LIFF app
 export const BRAND_ID = params.get('brandId') || (import.meta.env.VITE_BRAND_ID as string) || '';
 
+// deep link จาก Flex ใบยืนยัน (US-08) — `https://liff.line.me/<liffId>?orderId=...`
+// LINE เอา query นี้ต่อท้าย Endpoint URL ที่มี ?brandId= อยู่แล้ว → มาถึงเราครบทั้งคู่
+export const DEEP_LINK_ORDER_ID = params.get('orderId') || '';
+
 let token = sessionStorage.getItem('liffToken') || '';
 export const setToken = (t: string) => {
   token = t;
@@ -64,6 +68,10 @@ export interface BrandInfo { id: string; name: string; logoUrl: string | null; t
 export const getBrand = () => api<BrandInfo>(`/brand/${BRAND_ID}`, {}, false);
 
 export const getMenu = () => api<MenuCategory[]>(`/menu/${BRAND_ID}`, {}, false);
+
+// จุดตั้งครัว + รัศมีส่ง — ให้แผนที่ตั้งกึ่งกลางและวาดวงเขต (US-03)
+export interface DeliveryOrigin { name: string; lat: number; lng: number; maxDistanceKm: number }
+export const getDeliveryOrigin = () => api<DeliveryOrigin>(`/delivery/origin/${BRAND_ID}`, {}, false);
 
 export const checkDelivery = (lat: number, lng: number) =>
   api<DeliveryCheck>('/delivery/check', {

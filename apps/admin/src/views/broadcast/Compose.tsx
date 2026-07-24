@@ -50,8 +50,23 @@ export default function Compose({ brandId }: { brandId: string }) {
         ...(contentId ? { contentId } : { message: customMsg.trim() }),
         ...(audienceId ? { audienceId } : {}),
       });
-      setOk(`เข้าคิวส่งถึง ${bc.audienceCount} คนแล้ว — ยิงเข้า LINE เมื่อเชื่อม SETUP-1`);
       setCustomMsg(''); setContentId('');
+
+      if (bc.audienceCount === 0) {
+        setOk('ไม่มีผู้รับที่เข้าเกณฑ์ (อาจถูก opt-out ทั้งหมด) — ไม่ได้ส่งอะไรออกไป');
+        await load();
+        return;
+      }
+
+      // ยิงต่อทันที — กด "ส่ง" แล้วต้องส่งจริง ไม่ใช่แค่เข้าคิวรอคนมากดซ้ำ
+      // แถวใน message_logs จองไว้แล้ว ถ้าหลุดกลางคัน กด "ส่งจริง" ซ้ำได้ dedupeKey กันส่งซ้ำให้
+      setOk(`เข้าคิว ${bc.audienceCount} คน — กำลังยิงเข้า LINE…`);
+      const r = await dispatchBroadcast(brandId, bc.id);
+      setOk(
+        r.skipped
+          ? `เข้าคิว ${bc.audienceCount} คนแล้ว แต่แบรนด์นี้ยังไม่ได้เชื่อม LINE — กด "ส่งจริง" อีกครั้งหลังเชื่อมแล้ว`
+          : `ส่งเข้า LINE แล้ว ${r.dispatched} คน${r.failed ? ` · ล้มเหลว ${r.failed} (กด "ส่งจริง" เพื่อลองใหม่)` : ''}`,
+      );
       await load();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -105,7 +120,7 @@ export default function Compose({ brandId }: { brandId: string }) {
             {busy ? <span className="spinner" /> : '📨'} ส่ง Broadcast
           </button>
         </div>
-        <div className="pay" style={{ fontSize: 12 }}>⚠️ ยิงเข้า LINE จริงรอ SETUP-1 — ตอนนี้ระบบจองคิว + กันส่งซ้ำไว้ให้</div>
+        <div className="pay" style={{ fontSize: 12 }}>⚠️ กดแล้วส่งเข้า LINE ทันที (นับโควตา push) · ระบบหัก opt-out และกันส่งซ้ำให้อัตโนมัติ</div>
       </div>
 
       <div>

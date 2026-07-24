@@ -3,11 +3,13 @@ import liff from '@line/liff';
 import { ORDER_STATUS_FLOW } from '@aroihoh/shared';
 import {
   BRAND_ID,
+  DEEP_LINK_ORDER_ID,
   setToken,
   devLogin,
   lineLogin,
   getMenu,
   getBrand,
+  getDeliveryOrigin,
   checkDelivery,
   createOrder,
   getOrder,
@@ -17,7 +19,9 @@ import {
   type DeliveryCheck,
   type OrderResult,
   type BrandInfo,
+  type DeliveryOrigin,
 } from './api';
+import AddressPicker from './AddressPicker';
 
 type View = 'boot' | 'error' | 'menu' | 'cart' | 'checkout' | 'done' | 'track';
 
@@ -25,10 +29,6 @@ const STATUS_TH: Record<string, string> = {
   pending: 'รอยืนยัน', confirmed: 'ร้านรับออเดอร์', preparing: 'กำลังทำอาหาร',
   ready: 'จัดเสร็จ รอไรเดอร์', delivering: 'กำลังจัดส่ง', completed: 'ส่งสำเร็จ', cancelled: 'ยกเลิก',
 };
-const PRESETS = [
-  { key: 'in', label: 'ในเขต (อโศก)', lat: 13.7400, lng: 100.5620 },
-  { key: 'out', label: 'นอกเขต (ไกล)', lat: 13.9000, lng: 100.6000 },
-];
 const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined;
 
 interface CartLine { item: MenuItem; qty: number; }
@@ -42,8 +42,8 @@ export default function App() {
   const [note, setNote] = useState('');
 
   // checkout
-  const [preset, setPreset] = useState('in');
   const [addr, setAddr] = useState({ lat: 13.74, lng: 100.562, detail: '' });
+  const [origin, setOrigin] = useState<DeliveryOrigin | null>(null);
   const [zone, setZone] = useState<DeliveryCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -76,6 +76,18 @@ export default function App() {
             document.documentElement.style.setProperty('--brand-primary', b.theme.primaryColor);
           }
         }
+
+        // มาจากปุ่ม "ดูสถานะออเดอร์" ใน Flex → เข้าหน้าติดตามเลย ไม่ใช่หน้าเมนู
+        // โหลดไม่ได้ (ออเดอร์ของคนอื่น/ถูกลบ) ก็ตกไปหน้าเมนูตามปกติ ไม่ต้องขึ้น error
+        if (DEEP_LINK_ORDER_ID) {
+          try {
+            setOrder(await getOrder(DEEP_LINK_ORDER_ID));
+            setView('track');
+            return;
+          } catch {
+            /* ตกไปหน้าเมนู */
+          }
+        }
         setView('menu');
       } catch (e) {
         setError((e as Error).message);
@@ -100,18 +112,31 @@ export default function App() {
   const setQty = (item: MenuItem, qty: number) =>
     setCart((c) => ({ ...c, [item.id]: { item, qty: Math.max(0, qty) } }));
 
-  const runCheck = async () => {
-    setChecking(true);
+  // โหลดจุดตั้งครัวตอนเข้าหน้าเลือกที่อยู่ + ตั้งหมุดเริ่มต้นที่ครัว (ใกล้ลูกค้าที่สุดโดยเฉลี่ย)
+  useEffect(() => {
+    if (view !== 'checkout' || origin) return;
+    getDeliveryOrigin()
+      .then((o) => {
+        setOrigin(o);
+        setAddr((a) => (a.lat === 13.74 && a.lng === 100.562 ? { ...a, lat: o.lat, lng: o.lng } : a));
+      })
+      .catch(() => {}); // ไม่มี origin ก็ยังปักหมุดเองได้ ไม่ต้องบล็อกการสั่ง
+  }, [view, origin]);
+
+  // ขยับหมุดแล้วเช็คระยะ/ค่าส่งให้อัตโนมัติ — หน่วงไว้ ไม่ให้ยิงทุกพิกเซลตอนลาก
+  // ผลที่ได้เป็นแค่ UX ตอนยืนยันออเดอร์ server เช็คซ้ำเองเสมอ (#5)
+  useEffect(() => {
+    if (view !== 'checkout') return;
     setZone(null);
-    setError('');
-    try {
-      setZone(await checkDelivery(addr.lat, addr.lng));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setChecking(false);
-    }
-  };
+    setChecking(true);
+    const t = setTimeout(() => {
+      checkDelivery(addr.lat, addr.lng)
+        .then(setZone)
+        .catch((e) => setError((e as Error).message))
+        .finally(() => setChecking(false));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [view, addr.lat, addr.lng]);
 
   const place = async () => {
     setPlacing(true);
@@ -162,7 +187,12 @@ export default function App() {
         title={brand?.name || 'ชิมชีวา One Price 60'}
         logoUrl={brand?.logoUrl || undefined}
         sub={view === 'menu' ? 'เลือกเมนู' : undefined}
-        onBack={view === 'cart' ? () => setView('menu') : view === 'checkout' ? () => setView('cart') : undefined}
+        onBack={
+          view === 'cart' ? () => setView('menu')
+          : view === 'checkout' ? () => setView('cart')
+          : view === 'track' ? () => setView('menu') // เข้าจาก deep link ก็ยังกลับไปสั่งเพิ่มได้
+          : undefined
+        }
       />
 
       <div className="body">
@@ -220,30 +250,28 @@ export default function App() {
           <>
             <div className="card">
               <h3>ที่อยู่จัดส่ง</h3>
-              <div className="presets">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    className={`preset ${preset === p.key ? 'on' : ''}`}
-                    onClick={() => { setPreset(p.key); setAddr((a) => ({ ...a, lat: p.lat, lng: p.lng })); setZone(null); }}
-                  >{p.label}</button>
-                ))}
-              </div>
-              <label className="fld">รายละเอียดที่อยู่</label>
-              <input value={addr.detail} onChange={(e) => setAddr({ ...addr, detail: e.target.value })} placeholder="บ้านเลขที่ / คอนโด / จุดสังเกต" />
-              <div style={{ marginTop: 10 }}>
-                <button className="btn ghost" onClick={runCheck} disabled={checking}>
-                  {checking ? <div className="spinner" /> : '📍 เช็คระยะ + ค่าส่ง'}
-                </button>
-              </div>
-              {zone && zone.inZone && (
-                <div className="zone-ok" style={{ marginTop: 10 }}>
-                  ✅ อยู่ในเขต · ค่าส่ง {baht(zone.deliveryFee ?? 0)} ({zone.distanceKm?.toFixed(1)} กม.)
+              <AddressPicker
+                origin={origin}
+                value={{ lat: addr.lat, lng: addr.lng }}
+                onChange={(p) => setAddr((a) => ({ ...a, lat: p.lat, lng: p.lng }))}
+              />
+
+              {checking && <div className="zone-checking">กำลังคำนวณระยะจากครัว…</div>}
+              {!checking && zone?.inZone && (
+                <div className="zone-ok">
+                  ✅ อยู่ในเขต · ห่างจากครัว {zone.distanceKm?.toFixed(1)} กม. · ค่าส่ง {baht(zone.deliveryFee ?? 0)}
                 </div>
               )}
-              {zone && !zone.inZone && (
-                <div className="zone-bad" style={{ marginTop: 10 }}>❌ {zone.reason || 'อยู่นอกเขตจัดส่ง'}</div>
+              {!checking && zone && !zone.inZone && (
+                <div className="zone-bad">❌ {zone.reason || 'อยู่นอกเขตจัดส่ง'}</div>
               )}
+
+              <label className="fld" style={{ marginTop: 12 }}>รายละเอียดที่อยู่</label>
+              <input
+                value={addr.detail}
+                onChange={(e) => setAddr({ ...addr, detail: e.target.value })}
+                placeholder="บ้านเลขที่ / ชั้น / ห้อง / จุดสังเกตให้ไรเดอร์"
+              />
             </div>
 
             {zone?.inZone && (

@@ -28,6 +28,20 @@ export class DeliveryService {
   }
 
   /**
+   * จุดตั้งครัว + รัศมีส่ง — ให้ LIFF เอาไปตั้งจุดกึ่งกลางแผนที่และวาดวงเขตส่ง (US-03)
+   * public ได้: เป็นที่ตั้งร้าน ไม่ใช่ข้อมูลลูกค้า · ไม่คืน fee rule (คิดเงินฝั่ง server เท่านั้น #2)
+   */
+  async origin(brandId: string) {
+    const k = await this.resolveKitchen(brandId);
+    return {
+      name: k.name,
+      lat: k.lat,
+      lng: k.lng,
+      maxDistanceKm: k.maxDistanceKm ?? 0,
+    };
+  }
+
+  /**
    * คำนวณ quote (เขต + ค่าส่ง + kitchenId) — ใช้ทั้ง /delivery/check และตอนสร้างออเดอร์
    * รองรับกลยุทธ์ radius (Haversine) — polygon/PostGIS รอ ADR-02
    */
