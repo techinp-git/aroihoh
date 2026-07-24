@@ -86,6 +86,30 @@ export class LineClient {
     return { displayName: j.displayName, pictureUrl: j.pictureUrl };
   }
 
+  /**
+   * ดึง binary ของ message (รูป/ไฟล์) ที่ลูกค้าส่งมา
+   * ใช้ endpoint `api-data.line.me` (คนละโดเมนกับ API ปกติ — เหมือน rich menu image)
+   * คืน { skipped } ถ้ายังไม่ผูก LINE · จำกัดขนาดกันไฟล์ยักษ์ (LINE รูปสูงสุด ~10MB)
+   */
+  async getMessageContent(
+    brandId: string,
+    messageId: string,
+  ): Promise<{ ok: boolean; skipped?: boolean; buffer?: Buffer; contentType?: string; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    if (!res.ok) {
+      this.log.warn(`getMessageContent failed ${res.status} for brand ${brandId}`);
+      return { ok: false, error: `LINE ตอบ ${res.status}` };
+    }
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength > 12 * 1024 * 1024) return { ok: false, error: 'ไฟล์ใหญ่เกิน 12MB' };
+    return { ok: true, buffer, contentType };
+  }
+
   /** ทดสอบ token: เรียก LINE /bot/info — คืนชื่อบอทถ้าใช้ได้ */
   async getBotInfo(brandId: string): Promise<{ ok: boolean; name?: string; userId?: string; error?: string }> {
     const { channelAccessToken } = await this.config(brandId);

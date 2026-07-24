@@ -29,11 +29,16 @@ services:
     container_name: aroihoh-api
     restart: unless-stopped
     env_file: .env.prod
+    environment:
+      # รูปแชตจากลูกค้าเก็บใน volume นี้ (persist ข้าม rebuild) — ต้องตรงกับ MEDIA_DIR
+      MEDIA_DIR: /app/media
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - mediadata:/app/media
     # เปิดเฉพาะ localhost ของ host → Caddy บน host วิ่งเข้ามาได้ แต่โลกภายนอกเข้าตรงไม่ได้
     ports:
       - '127.0.0.1:3000:3000'
@@ -56,3 +61,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  mediadata:

@@ -7,6 +7,7 @@ import {
   updateCustomerTags,
   chatPresence,
   getAdminProfile,
+  chatImageUrl,
   baht,
   STATUS_TH,
   type ChatConversation,
@@ -33,6 +34,40 @@ const brandHue = (name: string) => {
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
   return h;
 };
+// avatar โปรไฟล์ LINE — ไม่มีรูป/โหลดพัง = วงกลมตัวอักษรแรกสีตามชื่อ
+function Avatar({ name, url, size = 38 }: { name: string | null; url?: string | null; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  const label = (name || '?').trim().charAt(0).toUpperCase();
+  const hue = brandHue(name || '?');
+  const common = { width: size, height: size, borderRadius: '50%', flexShrink: 0 } as const;
+  if (url && !broken) {
+    return (
+      <img
+        src={url}
+        alt=""
+        onError={() => setBroken(true)}
+        style={{ ...common, objectFit: 'cover', background: '#eee' }}
+      />
+    );
+  }
+  return (
+    <div
+      style={{
+        ...common,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 700,
+        fontSize: size * 0.42,
+        background: `hsl(${hue} 65% 90%)`,
+        color: `hsl(${hue} 55% 34%)`,
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
 function BrandChip({ name }: { name: string }) {
   const hue = brandHue(name);
   return (
@@ -223,8 +258,10 @@ export default function Chat() {
               key={c.customerId}
               className={`conv-item ${selected?.customerId === c.customerId ? 'active' : ''}`}
               onClick={() => openThread(c)}
+              style={{ display: 'flex', gap: 10, alignItems: 'center' }}
             >
-              <div style={{ minWidth: 0 }}>
+              <Avatar name={c.displayName} url={c.pictureUrl} />
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="cname" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {c.displayName || '(ไม่มีชื่อ)'}
@@ -254,9 +291,12 @@ export default function Chat() {
           ) : (
             <>
               <div className="thread-head">
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {thread.customer.displayName || '(ไม่มีชื่อ)'}
-                  <BrandChip name={thread.customer.brand.name} />
+                <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <Avatar name={thread.customer.displayName} url={thread.customer.pictureUrl} size={34} />
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {thread.customer.displayName || '(ไม่มีชื่อ)'}
+                    <BrandChip name={thread.customer.brand.name} />
+                  </span>
                 </span>
                 <div className="sub">
                   คุยผ่าน OA: {thread.customer.brand.name} · LINE: {thread.customer.lineUserId}
@@ -270,7 +310,18 @@ export default function Chat() {
               <div className="bubbles">
                 {thread.messages.map((m) => (
                   <div key={m.id} className={`bubble ${m.direction === 'outbound' ? 'out' : 'in'}`}>
-                    {m.text}
+                    {m.imagePath ? (
+                      <a href={chatImageUrl(m.id)} target="_blank" rel="noreferrer">
+                        <img
+                          src={chatImageUrl(m.id)}
+                          alt="รูปจากลูกค้า"
+                          loading="lazy"
+                          style={{ maxWidth: 220, maxHeight: 260, borderRadius: 10, display: 'block' }}
+                        />
+                      </a>
+                    ) : (
+                      m.text
+                    )}
                     <div className="btime">{hhmm(m.createdAt)}</div>
                   </div>
                 ))}

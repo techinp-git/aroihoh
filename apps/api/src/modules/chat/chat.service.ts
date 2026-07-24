@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineService } from '../line/line.service';
+import { conversationPreview } from '../line/inbound-preview';
 
 @Injectable()
 export class ChatService {
@@ -33,7 +34,8 @@ export class ChatService {
         brandId: c.brandId,
         brandName: c.brand.name,
         displayName: c.displayName,
-        lastMessage: c.chatMessages[0]?.text ?? '',
+        pictureUrl: c.pictureUrl, // รูปโปรไฟล์ LINE (โชว์ avatar ในลิสต์)
+        lastMessage: conversationPreview(c.chatMessages[0]?.text ?? '', c.chatMessages[0]?.imagePath ?? null),
         lastAt: c.chatMessages[0]?.createdAt ?? null,
         lastDirection: c.chatMessages[0]?.direction ?? null,
         unread: unreadMap.get(c.id) ?? 0,
@@ -48,6 +50,7 @@ export class ChatService {
       select: {
         id: true,
         displayName: true,
+        pictureUrl: true, // โชว์ avatar ใน header ห้องแชต
         lineUserId: true,
         brandId: true,
         brand: { select: { name: true } }, // US-40: บอกว่าห้องนี้คุยผ่าน OA ไหน

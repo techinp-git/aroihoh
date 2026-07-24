@@ -333,18 +333,25 @@ export const updateCustomerTags = (brandId: string, id: string, tags: string[]) 
 
 export interface ChatConversation {
   customerId: string; brandId: string; brandName: string; displayName: string | null;
+  pictureUrl: string | null; // รูปโปรไฟล์ LINE
   lastMessage: string; lastAt: string | null; lastDirection: string | null; unread: number;
 }
 export interface ChatMsg {
-  id: string; direction: 'inbound' | 'outbound'; text: string; adminId: string | null; createdAt: string;
+  id: string; direction: 'inbound' | 'outbound'; text: string;
+  imagePath: string | null; // ไม่ null = ข้อความรูป → โหลดผ่าน chatImageUrl()
+  adminId: string | null; createdAt: string;
 }
 export interface ChatThread {
   customer: {
-    id: string; displayName: string | null; lineUserId: string;
+    id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;
     brandId: string; brand: { name: string };
   };
   messages: ChatMsg[];
 }
+
+// URL รูปในแชต — ส่ง admin token ผ่าน query เพราะ <img> ใส่ Authorization header ไม่ได้
+export const chatImageUrl = (messageId: string) =>
+  `${API_BASE}/admin/chat/media/${messageId}?token=${encodeURIComponent(getAdminToken())}`;
 
 // US-40: ไม่ส่ง brandId = inbox รวมทุกแบรนด์ที่ admin มีสิทธิ์
 export const listConversations = (brandId?: string) =>

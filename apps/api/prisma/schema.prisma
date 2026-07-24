@@ -187,6 +187,7 @@ model ChatMessage {
   customerId String
   direction  ChatDirection
   text       String
+  imagePath  String? // ชื่อไฟล์รูปใน MEDIA_DIR (เฉพาะข้อความรูปจากลูกค้า) — null = ข้อความปกติ
   adminId    String? // ผู้ส่ง (เฉพาะ outbound)
   isRead     Boolean       @default(false) // inbound ที่แอดมินยังไม่อ่าน
   createdAt  DateTime      @default(now())

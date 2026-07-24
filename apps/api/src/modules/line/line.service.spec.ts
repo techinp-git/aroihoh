@@ -10,7 +10,8 @@ function make(replyRes: any, pushRes: any) {
   const prisma = {
     messageLog: { create: jest.fn(async ({ data }: any) => { created.push(data); return data; }) },
   };
-  const svc = new LineService(prisma as any, line as any);
+  const media = { save: jest.fn(), resolveExisting: jest.fn(), stream: jest.fn() };
+  const svc = new LineService(prisma as any, line as any, media as any);
   return { svc, line, prisma, created };
 }
 

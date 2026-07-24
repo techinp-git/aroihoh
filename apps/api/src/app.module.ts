@@ -20,6 +20,7 @@ import { ContentModule } from './modules/content/content.module';
 import { AudiencesModule } from './modules/audiences/audiences.module';
 import { LineModule } from './modules/line/line.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     BroadcastsModule,
     ContentModule,
     AudiencesModule,
+    MediaModule,
     LineModule,
     NotificationsModule,
   ],

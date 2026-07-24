@@ -2,13 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from './line.client';
+import { MediaService } from '../media/media.service';
+import { inboundPlaceholder } from './inbound-preview';
 
 // รูปแบบ event จาก LINE webhook (เอาเฉพาะที่ใช้)
 interface LineEvent {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; text?: string };
+  message?: { id?: string; type: string; text?: string };
 }
 
 type MsgType = 'welcome' | 'auto_reply' | 'chat' | 'status_push';
@@ -27,6 +29,7 @@ export class LineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly line: LineClient,
+    private readonly media: MediaService,
   ) {}
 
   // upsert ลูกค้าจาก lineUserId + ดึงชื่อ/รูปโปรไฟล์ถ้ายังไม่มี (แชตจะได้เห็นชื่อจริง)
@@ -102,18 +105,43 @@ export class LineService {
     return 'ได้รับข้อความแล้วครับ 🙏 เดี๋ยวร้านรีบตอบให้นะครับ';
   }
 
+  /**
+   * รูปจากลูกค้า: ดึง binary จาก LINE → เก็บลงดิสก์ → บันทึกเป็น chat message ที่มี imagePath
+   * ดึงรูปพลาด (token หมด/LINE ล่ม) = เก็บแค่ป้าย "[รูปภาพ]" ไม่ให้ห้องแชตว่าง
+   */
+  private async recordInboundImage(brandId: string, customerId: string, messageId?: string) {
+    let imagePath: string | null = null;
+    if (messageId) {
+      const content = await this.line.getMessageContent(brandId, messageId).catch(() => null);
+      if (content?.ok && content.buffer) {
+        imagePath = await this.media.save(content.buffer, content.contentType ?? null).catch(() => null);
+      }
+    }
+    await this.prisma.chatMessage.create({
+      data: {
+        brandId,
+        customerId,
+        direction: 'inbound',
+        text: imagePath ? '' : inboundPlaceholder('image'),
+        imagePath,
+        isRead: false,
+      },
+    });
+  }
+
   /** ประมวลผล events ที่ verify signature แล้ว (US-10/21) */
   async handleEvents(brandId: string, events: LineEvent[]) {
     for (const ev of events) {
       try {
         const userId = ev.source?.userId;
-        if (ev.type === 'message' && ev.message?.type === 'text' && userId) {
+        const mtype = ev.message?.type;
+        if (ev.type === 'message' && mtype === 'text' && userId) {
           const cust = await this.upsertCustomer(brandId, userId);
           await this.prisma.chatMessage.create({
-            data: { brandId, customerId: cust.id, direction: 'inbound', text: ev.message.text ?? '', isRead: false },
+            data: { brandId, customerId: cust.id, direction: 'inbound', text: ev.message?.text ?? '', isRead: false },
           });
           // auto-reply ด้วย reply token (ฟรี ไม่กินโควตา) + เก็บ outbound ลงแชต
-          const reply = await this.autoReplyText(brandId, ev.message.text ?? '');
+          const reply = await this.autoReplyText(brandId, ev.message?.text ?? '');
           const sent = await this.sendToCustomer(brandId, userId, reply, {
             replyToken: ev.replyToken,
             type: 'auto_reply',
@@ -124,6 +152,26 @@ export class LineService {
               data: { brandId, customerId: cust.id, direction: 'outbound', text: reply, isRead: true },
             });
           }
+        } else if (ev.type === 'message' && mtype === 'image' && userId) {
+          const cust = await this.upsertCustomer(brandId, userId);
+          await this.recordInboundImage(brandId, cust.id, ev.message?.id);
+          // ตอบรับด้วย reply token (ฟรี) ให้ลูกค้ารู้ว่ารูปถึงแล้ว
+          await this.sendToCustomer(brandId, userId, 'ได้รับรูปแล้วครับ 🙏 เดี๋ยวร้านดูให้นะครับ', {
+            replyToken: ev.replyToken,
+            type: 'auto_reply',
+            customerId: cust.id,
+          });
+        } else if (ev.type === 'message' && mtype && userId) {
+          // sticker/location/วิดีโอ ฯลฯ — เก็บป้ายไว้ ไม่ให้ห้องแชตหาย + ตอบรับ
+          const cust = await this.upsertCustomer(brandId, userId);
+          await this.prisma.chatMessage.create({
+            data: { brandId, customerId: cust.id, direction: 'inbound', text: inboundPlaceholder(mtype), isRead: false },
+          });
+          await this.sendToCustomer(brandId, userId, 'ได้รับข้อความแล้วครับ 🙏 เดี๋ยวร้านรีบตอบให้นะครับ', {
+            replyToken: ev.replyToken,
+            type: 'auto_reply',
+            customerId: cust.id,
+          });
         } else if (ev.type === 'follow' && userId) {
           const cust = await this.upsertCustomer(brandId, userId);
           await this.sendToCustomer(brandId, userId, 'ยินดีต้อนรับ! 🙏 พิมพ์ "เมนู" เพื่อสั่งอาหารได้เลยครับ', {
