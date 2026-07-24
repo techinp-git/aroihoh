@@ -430,6 +430,8 @@ export const setCustomerOptOut = (brandId: string, id: string, optedOut: boolean
 // ── LINE config (US-25 / SETUP-1) — owner only, ไม่คืน secret/token ดิบ ──
 export interface LineConfig {
   channelId: string; liffId: string;
+  loginChannelId: string;          // ที่ owner กรอกเอง ('' = ไม่ได้กรอก)
+  effectiveLoginChannelId: string; // เลขที่ถูกใช้ verify จริง (เดาจาก LIFF ID ถ้าไม่กรอก)
   hasChannelSecret: boolean; hasAccessToken: boolean;
   configured: boolean; webhookUrl: string;
 }
@@ -437,7 +439,7 @@ export const getLineConfig = (brandId: string) =>
   adminFetch<LineConfig>(`/admin/line-config?brandId=${encodeURIComponent(brandId)}`);
 export const updateLineConfig = (
   brandId: string,
-  body: { channelId?: string; liffId?: string; channelSecret?: string; channelAccessToken?: string },
+  body: { channelId?: string; loginChannelId?: string; liffId?: string; channelSecret?: string; channelAccessToken?: string },
 ) => adminFetch<LineConfig>(`/admin/line-config?brandId=${encodeURIComponent(brandId)}`, {
   method: 'PUT', body: JSON.stringify(body),
 });

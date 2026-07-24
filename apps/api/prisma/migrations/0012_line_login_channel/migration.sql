@@ -1,0 +1,11 @@
+-- LINE Login channel ID แยกจาก Messaging API channel ID
+--
+-- ก่อนหน้านี้ `lineChannelId` ถูกใช้ 2 หน้าที่ทั้งที่ LINE แยกเป็นคนละ channel คนละเลข:
+--   - Messaging API channel → ส่ง/รับข้อความ (คู่กับ secret/token)
+--   - LINE Login channel     → เจ้าของ LIFF app + ผู้ออก ID token
+-- ID token จาก liff.getIDToken() มี aud = Login channel เสมอ
+-- เอา Messaging channel ID ไป verify = LINE ตอบ 400 → ลูกค้าล็อกอินผ่าน LIFF ไม่ได้
+--
+-- ไม่ต้อง backfill: ถ้าไม่กรอกช่องนี้ โค้ดจะเดาจากเลขหน้า liffId ให้เอง
+-- (LIFF ID = <loginChannelId>-<suffix>) แล้วค่อยตกไปใช้ lineChannelId เป็นทางสุดท้าย
+ALTER TABLE "brands" ADD COLUMN "lineLoginChannelId" TEXT;

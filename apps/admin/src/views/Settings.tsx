@@ -22,7 +22,7 @@ import KitchenManager from './settings/KitchenManager';
 // การ์ดตั้งค่า LINE OA (SETUP-1) — owner เท่านั้น · secret/token ไม่ถูกส่งกลับมาแสดง
 function LineSetupCard({ brandId }: { brandId: string }) {
   const [cfg, setCfg] = useState<LineConfig | null>(null);
-  const [f, setF] = useState({ channelId: '', liffId: '', channelSecret: '', channelAccessToken: '' });
+  const [f, setF] = useState({ channelId: '', loginChannelId: '', liffId: '', channelSecret: '', channelAccessToken: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -33,7 +33,7 @@ function LineSetupCard({ brandId }: { brandId: string }) {
     try {
       const c = await getLineConfig(brandId);
       setCfg(c);
-      setF((prev) => ({ ...prev, channelId: c.channelId, liffId: c.liffId }));
+      setF((prev) => ({ ...prev, channelId: c.channelId, loginChannelId: c.loginChannelId, liffId: c.liffId }));
       getLineUsage(brandId).then(setUsage).catch(() => setUsage(null));
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -45,7 +45,7 @@ function LineSetupCard({ brandId }: { brandId: string }) {
     setBusy(true); setMsg(null);
     try {
       // ส่ง secret/token เฉพาะเมื่อกรอกใหม่ (เว้นว่าง = คงค่าเดิม)
-      const body: Record<string, string> = { channelId: f.channelId, liffId: f.liffId };
+      const body: Record<string, string> = { channelId: f.channelId, loginChannelId: f.loginChannelId, liffId: f.liffId };
       if (f.channelSecret) body.channelSecret = f.channelSecret;
       if (f.channelAccessToken) body.channelAccessToken = f.channelAccessToken;
       const c = await updateLineConfig(brandId, body);
@@ -98,6 +98,14 @@ function LineSetupCard({ brandId }: { brandId: string }) {
       {field('Channel secret', 'channelSecret', { password: true, set: cfg?.hasChannelSecret, placeholder: cfg?.hasChannelSecret ? '•••••••• (ตั้งไว้แล้ว)' : '' })}
       {field('Channel access token', 'channelAccessToken', { password: true, set: cfg?.hasAccessToken, placeholder: cfg?.hasAccessToken ? '•••••••• (ตั้งไว้แล้ว)' : '' })}
       {field('LIFF ID', 'liffId', { placeholder: '2000xxxxxx-abcdEFGH' })}
+      {field('LINE Login channel ID', 'loginChannelId', { placeholder: 'เว้นว่าง = เดาจากเลขหน้า LIFF ID' })}
+      <div className="pay" style={{ fontSize: 12, marginTop: -4, marginBottom: 12 }}>
+        LIFF อยู่ใต้ <b>LINE Login channel</b> ซึ่งเป็น <b>คนละ channel คนละเลข</b> กับ Messaging API
+        ด้านบน — ID token ที่ลูกค้าส่งมาต้อง verify ด้วยเลขนี้ ไม่งั้นล็อกอินผ่าน LIFF ไม่ได้
+        {cfg?.effectiveLoginChannelId && (
+          <> · ตอนนี้ใช้ <b>{cfg.effectiveLoginChannelId}</b>{!cfg.loginChannelId && ' (เดาจาก LIFF ID)'}</>
+        )}
+      </div>
 
       <div className="pay" style={{ margin: '10px 0 4px' }}>Webhook URL (วางใน LINE Developers → Messaging API → Use webhook = เปิด)</div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

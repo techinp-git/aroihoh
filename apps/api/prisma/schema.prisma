@@ -54,9 +54,12 @@ model Brand {
   fixedCostDaily Int?
 
   // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
-  lineChannelId        String?
+  lineChannelId        String? // Messaging API channel — ส่ง/รับข้อความ
   lineChannelSecretEnc String?
   lineChannelTokenEnc  String?
+  // LINE Login channel — เจ้าของ LIFF app + ผู้ออก ID token (คนละเลขกับ Messaging channel)
+  // ไม่กรอก = เดาจากเลขหน้า liffId (ดู auth/login-channel.ts)
+  lineLoginChannelId   String?
   liffId               String?
   richMenuId           String?
 

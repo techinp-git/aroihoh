@@ -10,6 +10,8 @@ import { assertBrandAccess } from '../../common/admin-scope';
 
 class UpdateLineConfigDto {
   @IsOptional() @IsString() @MaxLength(64) channelId?: string;
+  // LINE Login channel (เจ้าของ LIFF) — เว้นว่าง = เดาจากเลขหน้า LIFF ID
+  @IsOptional() @IsString() @MaxLength(64) loginChannelId?: string;
   @IsOptional() @IsString() @MaxLength(64) liffId?: string;
   @IsOptional() @IsString() @MaxLength(256) channelSecret?: string;
   @IsOptional() @IsString() @MaxLength(512) channelAccessToken?: string;

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from './line.client';
 import { encryptSecret as encrypt } from '../../common/crypto'; // SEC-1: AES-256-GCM at-rest
 import { buildRichMenu, validateRichMenu, RICH_MENU_WIDTH, RICH_MENU_HEIGHT_TALL } from './richmenu'; // US-10
+import { resolveLoginChannelId } from '../auth/login-channel';
 
 @Injectable()
 export class LineConfigService {
@@ -19,13 +20,22 @@ export class LineConfigService {
   async get(brandId: string) {
     const b = await this.prisma.brand.findUnique({
       where: { id: brandId },
-      select: { lineChannelId: true, liffId: true, lineChannelSecretEnc: true, lineChannelTokenEnc: true },
+      select: {
+        lineChannelId: true,
+        lineLoginChannelId: true,
+        liffId: true,
+        lineChannelSecretEnc: true,
+        lineChannelTokenEnc: true,
+      },
     });
     if (!b) throw new NotFoundException('ไม่พบแบรนด์');
     const hasSecret = !!b.lineChannelSecretEnc;
     const hasToken = !!b.lineChannelTokenEnc;
     return {
       channelId: b.lineChannelId || '',
+      loginChannelId: b.lineLoginChannelId || '',
+      // เลขที่จะถูกใช้ verify จริง (ว่างไว้ = เดาจาก LIFF ID ให้) — โชว์ให้ owner เห็นจะได้ไม่งง
+      effectiveLoginChannelId: resolveLoginChannelId(b) || '',
       liffId: b.liffId || '',
       hasChannelSecret: hasSecret,
       hasAccessToken: hasToken,
@@ -42,6 +52,7 @@ export class LineConfigService {
     brandId: string,
     dto: {
       channelId?: string;
+      loginChannelId?: string;
       liffId?: string;
       channelSecret?: string | null;
       channelAccessToken?: string | null;
@@ -52,6 +63,8 @@ export class LineConfigService {
 
     const data: Record<string, string | null> = {};
     if (dto.channelId !== undefined) data.lineChannelId = dto.channelId.trim() || null;
+    if (dto.loginChannelId !== undefined)
+      data.lineLoginChannelId = dto.loginChannelId.trim() || null;
     if (dto.liffId !== undefined) data.liffId = dto.liffId.trim() || null;
     if (dto.channelSecret !== undefined)
       data.lineChannelSecretEnc = dto.channelSecret ? encrypt(dto.channelSecret.trim()) : null;

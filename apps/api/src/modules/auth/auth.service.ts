@@ -6,6 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { verifyLineIdToken } from './line-verify';
+import { resolveLoginChannelId } from './login-channel';
 
 interface AuthResult {
   accessToken: string;
@@ -25,13 +26,15 @@ export class AuthService {
     if (!brand || !brand.isActive) {
       throw new NotFoundException('brand not found or inactive');
     }
-    if (!brand.lineChannelId) {
+    // ต้อง verify ด้วย "Login channel" ที่ออก ID token ไม่ใช่ Messaging channel (คนละเลข)
+    const loginChannelId = resolveLoginChannelId(brand);
+    if (!loginChannelId) {
       throw new UnauthorizedException('brand has no LINE channel configured');
     }
 
     let payload;
     try {
-      payload = await verifyLineIdToken(idToken, brand.lineChannelId);
+      payload = await verifyLineIdToken(idToken, loginChannelId);
     } catch (e) {
       throw new UnauthorizedException(
         e instanceof Error ? e.message : 'invalid LINE id token',

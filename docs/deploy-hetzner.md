@@ -120,11 +120,19 @@ cd /opt/aroihoh && git pull
 # API:
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy   # ถ้ามี migration ใหม่
-# Static (ถ้าแก้ liff/admin):
+# Static (ถ้าแก้ liff/admin) — env ต้องครบ Vite ฝังตอน build ลืมแล้วเงียบ ไม่ error:
+export VITE_API_BASE_URL=https://aroihoh-api.jivecode.click/api   # ⚠️ ต้องมี /api
+export VITE_LIFF_ID=<LIFF ID ของแบรนด์>                            # ⚠️ ลืม = LIFF ตกไปใช้ dev-login → 403
 npm ci && npm run build -w packages/shared && npm run build -w apps/liff -w apps/admin
 sudo cp -r apps/liff/dist/*  /var/www/aroihoh-liff/
 sudo cp -r apps/admin/dist/* /var/www/aroihoh-admin/
+
+# ตรวจว่า env ฝังเข้า bundle จริง (ไม่ใช่แค่ export แล้วคิดว่าติด)
+grep -c "$VITE_LIFF_ID" /var/www/aroihoh-liff/assets/*.js     # ต้อง > 0
+grep -o "https://aroihoh-api[^\"]*" /var/www/aroihoh-admin/assets/*.js | head -1
 ```
+
+> ค่าพวกนี้เก็บไว้ใน `.env.prod` ได้ แล้ว `set -a && . .env.prod && set +a` ก่อน build จะได้ไม่ต้องจำ
 
 ## Backup DB (สำคัญ — Hetzner ไม่ auto ให้เหมือน managed)
 
