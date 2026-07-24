@@ -48,6 +48,15 @@ const TITLES: Record<View, { title: string; sub: string }> = {
 
 const ROLE_TH: Record<string, string> = { owner: 'เจ้าของ', manager: 'ผู้จัดการ', staff: 'พนักงาน' };
 
+// หน้าไหนอยู่ไหน เก็บใน URL hash (#/orders) → refresh/กด back แล้วยังอยู่หน้าเดิม
+const VIEWS = NAV.map((n) => n.key);
+const readHash = (): View | null => {
+  const h = window.location.hash.replace(/^#\/?/, '');
+  return (VIEWS as string[]).includes(h) ? (h as View) : null;
+};
+// แบรนด์ที่เลือกก็เหมือนกัน — ไม่งั้น reload ทีเด้งกลับแบรนด์แรกทุกที
+const BRAND_KEY = 'aroihoh.brandId';
+
 /** หน้าล็อกอินจริง (US-29) แทน key-gate เดิม */
 function Login({ onSuccess }: { onSuccess: (p: AdminProfile) => void }) {
   const [email, setEmail] = useState('');
@@ -102,7 +111,7 @@ export default function App() {
   const [profile, setProfile] = useState<AdminProfile | null>(
     getAdminToken() ? getAdminProfile() : null,
   );
-  const [view, setView] = useState<View>('dashboard');
+  const [view, setView] = useState<View>(() => readHash() || 'dashboard');
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState('');
   const [brandError, setBrandError] = useState('');
@@ -112,15 +121,39 @@ export default function App() {
     try {
       const bs = await listBrands();
       setBrands(bs);
-      setBrandId((cur) => cur || bs[0]?.id || '');
+      setBrandId((cur) => {
+        if (cur) return cur;
+        const saved = localStorage.getItem(BRAND_KEY);
+        return (saved && bs.some((b) => b.id === saved) ? saved : bs[0]?.id) || '';
+      });
     } catch (e) {
       setBrandError((e as Error).message);
     }
   }, []);
 
+  const selectBrand = useCallback((id: string) => {
+    setBrandId(id);
+    localStorage.setItem(BRAND_KEY, id);
+  }, []);
+
   useEffect(() => {
     if (profile) loadBrands();
   }, [profile, loadBrands]);
+
+  // sync view ↔ hash ทั้งสองทาง (กดเมนู → เขียน hash · กด back/แปะ URL → อ่าน hash)
+  useEffect(() => {
+    const target = `#/${view}`;
+    if (window.location.hash !== target) window.location.replace(target);
+  }, [view]);
+
+  useEffect(() => {
+    const onHash = () => {
+      const h = readHash();
+      if (h) setView(h);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   if (!profile) {
     return <Login onSuccess={setProfile} />;
@@ -146,7 +179,10 @@ export default function App() {
           <button
             key={n.key}
             className={`nav-item ${view === n.key ? 'active' : ''}`}
-            onClick={() => setView(n.key)}
+            onClick={() => {
+              window.location.hash = `#/${n.key}`; // push history → ปุ่ม back ใช้ได้
+              setView(n.key);
+            }}
           >
             <span className="ic">{n.ic}</span>
             {n.label}
@@ -167,7 +203,7 @@ export default function App() {
           <div className="topbar-right">
             <label className="field">
               <span>แบรนด์</span>
-              <select value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+              <select value={brandId} onChange={(e) => selectBrand(e.target.value)}>
                 {brands.length === 0 && <option value="">—</option>}
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>

@@ -15,6 +15,15 @@ import {
 } from '../api';
 import { TagEditor } from '../components/Tags';
 
+const POLL_MS = 5000;
+
+// เทียบว่า thread เปลี่ยนจริงไหม — ถ้าเหมือนเดิมต้องคง object เดิมไว้
+// ไม่งั้น poll ทุก 5 วิจะ re-render + เด้ง scroll ลงล่างตลอดจนอ่านข้อความเก่าไม่ได้
+const sameThread = (a: ChatThread | null, b: ChatThread) =>
+  !!a &&
+  a.messages.length === b.messages.length &&
+  a.messages[a.messages.length - 1]?.id === b.messages[b.messages.length - 1]?.id;
+
 const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
@@ -59,17 +68,34 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const myName = getAdminProfile()?.name || 'แอดมิน';
 
-  const loadConvs = useCallback(async () => {
-    setError('');
+  const loadConvs = useCallback(async (silent = false) => {
+    if (!silent) setError('');
     try {
       setConvs(await listConversations()); // ทุกแบรนด์ที่มีสิทธิ์
     } catch (e) {
-      setError((e as Error).message);
+      // poll พังชั่วคราว (เน็ตสะดุด) ไม่ต้องเด้ง error รบกวนคนตอบแชต
+      if (!silent) setError((e as Error).message);
     }
   }, []);
 
   useEffect(() => {
     loadConvs();
+  }, [loadConvs]);
+
+  // auto-refresh inbox — ลูกค้าตอบมาต้องเห็นเองโดยไม่ต้อง F5
+  // (แชตยังไม่มี SSE เหมือน orders/KDS — poll ไปก่อน, หยุดตอนสลับแท็บไปแอปอื่น)
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!document.hidden) loadConvs(true);
+    }, POLL_MS);
+    const onVisible = () => {
+      if (!document.hidden) loadConvs(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadConvs]);
 
   // แบรนด์ที่โผล่ใน inbox (ไว้ทำตัวกรอง)
@@ -99,6 +125,26 @@ export default function Chat() {
     },
     [loadConvs],
   );
+
+  // auto-refresh ห้องที่เปิดอยู่ — ข้อความใหม่โผล่เองระหว่างคุย
+  useEffect(() => {
+    if (!selected) return;
+    let alive = true;
+    const tick = async () => {
+      if (document.hidden) return;
+      try {
+        const t = await getThread(selected.brandId, selected.customerId);
+        if (alive) setThread((cur) => (sameThread(cur, t) ? cur : t));
+      } catch {
+        /* เน็ตสะดุด — รอบหน้าค่อยลองใหม่ */
+      }
+    };
+    const id = setInterval(tick, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [selected]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
