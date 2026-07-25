@@ -11,26 +11,7 @@ import {
   getAdminToken,
   type Order,
 } from '../api';
-
-// เสียงเตือนสั้น ๆ ผ่าน Web Audio (ไม่ต้องมีไฟล์เสียง)
-function beep() {
-  try {
-    const AC = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AC();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.value = 0.08;
-    o.start();
-    o.stop(ctx.currentTime + 0.18);
-    o.onended = () => ctx.close();
-  } catch {
-    /* ignore */
-  }
-}
+import { beep } from '../lib/beep';
 
 export default function Orders({ brandId }: { brandId: string }) {
   const [filter, setFilter] = useState('');

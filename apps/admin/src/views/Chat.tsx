@@ -16,8 +16,10 @@ import {
 } from '../api';
 import { TagEditor } from '../components/Tags';
 import { Avatar, nameHue } from '../components/Avatar';
+import { beep } from '../lib/beep';
 
 const POLL_MS = 5000;
+const SOUND_KEY = 'aroihoh.chatSound'; // จำค่าเปิด/ปิดเสียงข้าม refresh
 
 // เทียบว่า thread เปลี่ยนจริงไหม — ถ้าเหมือนเดิมต้องคง object เดิมไว้
 // ไม่งั้น poll ทุก 5 วิจะ re-render + เด้ง scroll ลงล่างตลอดจนอ่านข้อความเก่าไม่ได้
@@ -62,13 +64,32 @@ export default function Chat() {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [viewers, setViewers] = useState<string[]>([]); // US-46: คนอื่นที่กำลังดูห้องนี้
+  const [soundOn, setSoundOn] = useState(() => localStorage.getItem(SOUND_KEY) !== '0');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevUnreadRef = useRef<number | null>(null); // ยอด unread รอบก่อน — เพิ่มขึ้น = มีข้อความใหม่
+  const soundRef = useRef(soundOn);
+  soundRef.current = soundOn;
   const myName = getAdminProfile()?.name || 'แอดมิน';
+
+  const toggleSound = () => {
+    setSoundOn((on) => {
+      const next = !on;
+      localStorage.setItem(SOUND_KEY, next ? '1' : '0');
+      if (next) beep(660, 90); // กดเปิด = ปลุก AudioContext ด้วย user gesture + ได้ยินตัวอย่าง
+      return next;
+    });
+  };
 
   const loadConvs = useCallback(async (silent = false) => {
     if (!silent) setError('');
     try {
-      setConvs(await listConversations()); // ทุกแบรนด์ที่มีสิทธิ์
+      const list = await listConversations(); // ทุกแบรนด์ที่มีสิทธิ์
+      // เตือนเมื่อยอด unread รวมเพิ่มขึ้น = ลูกค้าทักเข้ามาใหม่ (ข้ามรอบแรกที่ยังไม่มีฐานเทียบ)
+      const totalUnread = list.reduce((n, c) => n + c.unread, 0);
+      const prev = prevUnreadRef.current;
+      if (prev !== null && totalUnread > prev && soundRef.current) beep();
+      prevUnreadRef.current = totalUnread;
+      setConvs(list);
     } catch (e) {
       // poll พังชั่วคราว (เน็ตสะดุด) ไม่ต้องเด้ง error รบกวนคนตอบแชต
       if (!silent) setError((e as Error).message);
@@ -103,6 +124,16 @@ export default function Chat() {
   }, [convs]);
 
   const shown = filterBrand ? convs.filter((c) => c.brandId === filterBrand) : convs;
+  const totalUnread = useMemo(() => convs.reduce((n, c) => n + c.unread, 0), [convs]);
+
+  // badge จำนวนที่ยังไม่อ่านบนแท็บเบราว์เซอร์ — เห็นแม้สลับไปแท็บอื่น · คืนค่าตอนออกจากหน้า
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s*/, '');
+    document.title = totalUnread > 0 ? `(${totalUnread}) ${base}` : base;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\)\s*/, '');
+    };
+  }, [totalUnread]);
 
   const openThread = useCallback(
     async (conv: ChatConversation) => {
@@ -199,6 +230,20 @@ export default function Chat() {
       <div className="chat-wrap">
         {/* conversation list — inbox รวมทุกแบรนด์ */}
         <div className="card conv-list">
+          {/* หัวลิสต์: ยอดที่ยังไม่อ่าน + ปุ่มเปิด/ปิดเสียงเตือน */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #eee' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              กล่องข้อความ{totalUnread > 0 && <span className="unread" style={{ marginLeft: 6 }}>{totalUnread}</span>}
+            </span>
+            <button
+              className="btn ghost sm"
+              title={soundOn ? 'ปิดเสียงเตือน' : 'เปิดเสียงเตือน'}
+              onClick={toggleSound}
+              style={{ padding: '2px 8px' }}
+            >
+              {soundOn ? '🔔' : '🔕'}
+            </button>
+          </div>
           {brands.length > 1 && (
             <div style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
               <select

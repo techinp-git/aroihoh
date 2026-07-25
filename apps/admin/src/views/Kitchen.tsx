@@ -10,19 +10,7 @@ import {
 } from '../api';
 import BrandChip from '../components/BrandChip';
 import { printHtml, kitchenTicketHtml, riderLabelHtml } from '../lib/print';
-
-function beep() {
-  try {
-    const AC = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AC();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.08;
-    o.start(); o.stop(ctx.currentTime + 0.18);
-    o.onended = () => ctx.close();
-  } catch { /* ignore */ }
-}
+import { beep } from '../lib/beep';
 
 const since = (iso: string) => {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
