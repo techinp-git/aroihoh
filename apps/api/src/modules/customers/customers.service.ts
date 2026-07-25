@@ -55,6 +55,25 @@ export class CustomersService {
     };
   }
 
+  /**
+   * แท็กทั้งหมดที่ใช้จริงในแบรนด์นี้ + จำนวนลูกค้าต่อแท็ก
+   * ใช้ทั้งตัวกรองในหน้าลูกค้า และ tag picker ใน rule builder ของ broadcast
+   * (Prisma ไม่ group by element ใน array ได้ตรง ๆ → นับใน memory จากลิสต์ tags)
+   */
+  async tagCounts(brandId: string): Promise<{ tag: string; count: number }[]> {
+    const rows = await this.prisma.customer.findMany({
+      where: { brandId, tags: { isEmpty: false } },
+      select: { tags: true },
+    });
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'th'));
+  }
+
   // PDPA: ตั้งค่า opt-out รับข่าวสาร (แอดมินบันทึกตามคำขอลูกค้า) — broadcast จะข้ามคนนี้เสมอ
   async setOptOut(brandId: string, customerId: string, optedOut: boolean) {
     const c = await this.prisma.customer.findFirst({ where: { id: customerId, brandId } });

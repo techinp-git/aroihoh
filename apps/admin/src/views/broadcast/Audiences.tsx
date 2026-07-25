@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  listAudiences, audiencePresets, previewAudienceRules, createAudience, deleteAudience,
-  type Audience, type AudiencePreset, type AudienceRules, type Criterion,
+  listAudiences, audiencePresets, previewAudienceRules, createAudience, deleteAudience, listTagCounts,
+  type Audience, type AudiencePreset, type AudienceRules, type Criterion, type TagCount,
 } from '../../api';
 import { describeRules, CRITERION_TYPES, defaultCriterion } from './ruleLabels';
 
@@ -10,6 +10,7 @@ const EMPTY: AudienceRules = { match: 'all', criteria: [] };
 export default function Audiences({ brandId }: { brandId: string }) {
   const [items, setItems] = useState<Audience[]>([]);
   const [presets, setPresets] = useState<AudiencePreset[]>([]);
+  const [tagCounts, setTagCounts] = useState<TagCount[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -21,8 +22,8 @@ export default function Audiences({ brandId }: { brandId: string }) {
   const load = useCallback(async () => {
     if (!brandId) return;
     try {
-      const [a, p] = await Promise.all([listAudiences(brandId), audiencePresets()]);
-      setItems(a); setPresets(p);
+      const [a, p, t] = await Promise.all([listAudiences(brandId), audiencePresets(), listTagCounts(brandId).catch(() => [])]);
+      setItems(a); setPresets(p); setTagCounts(t);
     } catch (e) { setError((e as Error).message); }
   }, [brandId]);
   useEffect(() => { load(); }, [load]);
@@ -114,8 +115,40 @@ export default function Audiences({ brandId }: { brandId: string }) {
                       <input type="number" min="1" value={c.lookbackDays} onChange={(e) => patchCriterion(i, { lookbackDays: +e.target.value })} style={{ width: 60 }} /> วันก่อน</span>
                   )}
                   {c.type === 'tags' && (
-                    <input value={c.tags.join(', ')} onChange={(e) => patchCriterion(i, { tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                      placeholder="vip, ประจำ" style={{ flex: 1, minWidth: 120 }} />
+                    <div style={{ flex: 1, minWidth: 160, display: 'grid', gap: 6 }}>
+                      {/* คลิกเลือกจากแท็กที่มีอยู่จริง (เข้าเงื่อนไข = มีแท็กใดแท็กหนึ่งที่เลือก) */}
+                      {tagCounts.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {tagCounts.map((t) => {
+                            const on = c.tags.includes(t.tag);
+                            return (
+                              <button
+                                key={t.tag}
+                                onClick={() =>
+                                  patchCriterion(i, {
+                                    tags: on ? c.tags.filter((x) => x !== t.tag) : [...c.tags, t.tag],
+                                  })
+                                }
+                                style={{
+                                  cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999,
+                                  border: on ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                  background: on ? 'var(--accent-weak, #ffe9df)' : 'transparent',
+                                  color: on ? 'var(--accent)' : 'var(--text)',
+                                }}
+                              >
+                                {on ? '✓ ' : ''}{t.tag} · {t.count}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* พิมพ์แท็กเองได้ (เผื่อยังไม่มีลูกค้าติดแท็กนั้น) */}
+                      <input
+                        value={c.tags.join(', ')}
+                        onChange={(e) => patchCriterion(i, { tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                        placeholder={tagCounts.length ? 'หรือพิมพ์เอง: vip, ประจำ' : 'vip, ประจำ'}
+                      />
+                    </div>
                   )}
                   <span style={{ flex: 1 }} />
                   <button className="btn danger sm" onClick={() => removeCriterion(i)}>ลบ</button>

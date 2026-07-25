@@ -1,17 +1,43 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   listCustomers,
+  listTagCounts,
   getCustomer,
   updateCustomerTags,
   baht,
   STATUS_TH,
   type CustomerRow,
   type CustomerDetail,
+  type TagCount,
 } from '../api';
 import { TagEditor } from '../components/Tags';
+import { Avatar, nameHue } from '../components/Avatar';
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
+
+// นับแท็กจากลิสต์ในมือ (ให้ตัวกรองอัปเดตทันทีหลังแก้แท็ก โดยไม่ต้องโหลดใหม่)
+const recount = (rows: CustomerRow[]): TagCount[] => {
+  const m = new Map<string, number>();
+  for (const r of rows) for (const t of r.tags) m.set(t, (m.get(t) ?? 0) + 1);
+  return [...m.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count);
+};
+
+// ป้ายแท็กเล็ก ๆ สีตามชื่อแท็ก (เหมือนกันทุกที่)
+function TagPill({ tag }: { tag: string }) {
+  const hue = nameHue(tag);
+  return (
+    <span
+      style={{
+        display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '1px 8px',
+        borderRadius: 999, background: `hsl(${hue} 70% 93%)`, color: `hsl(${hue} 55% 32%)`,
+        border: `1px solid hsl(${hue} 55% 80%)`, whiteSpace: 'nowrap',
+      }}
+    >
+      {tag}
+    </span>
+  );
+}
 
 export default function Customers({ brandId }: { brandId: string }) {
   const [rows, setRows] = useState<CustomerRow[]>([]);
@@ -20,13 +46,20 @@ export default function Customers({ brandId }: { brandId: string }) {
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [tagCounts, setTagCounts] = useState<TagCount[]>([]);
+  const [filterTag, setFilterTag] = useState(''); // '' = ทุกคน
 
   const load = useCallback(async () => {
     if (!brandId) return;
     setLoading(true);
     setError('');
     try {
-      setRows(await listCustomers(brandId, q.trim() || undefined));
+      const [r, t] = await Promise.all([
+        listCustomers(brandId, q.trim() || undefined),
+        listTagCounts(brandId).catch(() => []),
+      ]);
+      setRows(r);
+      setTagCounts(t);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -37,6 +70,9 @@ export default function Customers({ brandId }: { brandId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // กรองตามแท็กฝั่ง client (ลิสต์โหลดมาครบแล้ว — ไม่ต้องยิง server ซ้ำตอนสลับแท็บแท็ก)
+  const shown = filterTag ? rows.filter((c) => c.tags.includes(filterTag)) : rows;
 
   const open = async (id: string) => {
     setDetailLoading(true);
@@ -55,6 +91,9 @@ export default function Customers({ brandId }: { brandId: string }) {
     try {
       await updateCustomerTags(brandId, detail.id, tags);
       setDetail({ ...detail, tags });
+      // อัปเดตลิสต์+ตัวนับแท็กในหน่วยความจำ ให้ตรงตอนกดกลับ (ไม่ต้องยิง server ซ้ำ)
+      setRows((rs) => rs.map((r) => (r.id === detail.id ? { ...r, tags } : r)));
+      setTagCounts(recount(rows.map((r) => (r.id === detail.id ? { ...r, tags } : r))));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -123,7 +162,7 @@ export default function Customers({ brandId }: { brandId: string }) {
     <>
       {error && <div className="alert error">{error}</div>}
       <div className="section-head">
-        <h2>ลูกค้าทั้งหมด ({rows.length})</h2>
+        <h2>ลูกค้าทั้งหมด ({shown.length}{filterTag && ` / ${rows.length}`})</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <input placeholder="ค้นหาชื่อ…" value={q} onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && load()} />
@@ -133,16 +172,61 @@ export default function Customers({ brandId }: { brandId: string }) {
         </div>
       </div>
 
+      {/* ตัวกรองตามแท็ก — คลิกเลือกแท็กเพื่อดูเฉพาะลูกค้ากลุ่มนั้น */}
+      {tagCounts.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+          <span className="pay" style={{ fontSize: 12 }}>กรองแท็ก:</span>
+          <button
+            className="btn ghost sm"
+            style={filterTag === '' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+            onClick={() => setFilterTag('')}
+          >
+            ทั้งหมด
+          </button>
+          {tagCounts.map((t) => (
+            <button
+              key={t.tag}
+              onClick={() => setFilterTag((cur) => (cur === t.tag ? '' : t.tag))}
+              style={{
+                cursor: 'pointer', border: 'none', background: 'transparent', padding: 0,
+                opacity: filterTag && filterTag !== t.tag ? 0.45 : 1,
+                outline: filterTag === t.tag ? '2px solid var(--accent)' : 'none',
+                borderRadius: 999,
+              }}
+            >
+              <TagPill tag={`${t.tag} · ${t.count}`} />
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="card">
         <div className="table-wrap">
           <table className="data">
             <thead>
-              <tr><th>ลูกค้า</th><th>ออเดอร์</th><th>ยอดใช้จ่าย</th><th>สั่งล่าสุด</th><th></th></tr>
+              <tr><th>ลูกค้า</th><th>แท็ก</th><th>ออเดอร์</th><th>ยอดใช้จ่าย</th><th>สั่งล่าสุด</th><th></th></tr>
             </thead>
             <tbody>
-              {rows.map((c) => (
+              {shown.map((c) => (
                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => open(c.id)}>
-                  <td style={{ fontWeight: 600 }}>{c.displayName || '(ไม่มีชื่อ)'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <Avatar name={c.displayName} url={c.pictureUrl} size={32} />
+                      <span style={{ fontWeight: 600 }}>
+                        {c.displayName || '(ไม่มีชื่อ)'}
+                        {c.marketingOptedOut && (
+                          <span className="pay" style={{ fontSize: 11, marginLeft: 6 }}>🚫 ไม่รับข่าว</span>
+                        )}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 220 }}>
+                      {c.tags.length === 0
+                        ? <span className="pay" style={{ fontSize: 12 }}>—</span>
+                        : c.tags.map((t) => <TagPill key={t} tag={t} />)}
+                    </div>
+                  </td>
                   <td>{c.orderCount}</td>
                   <td className="total">{baht(c.totalSpent)}</td>
                   <td className="time">{fmtDate(c.lastOrderAt)}</td>
@@ -152,8 +236,10 @@ export default function Customers({ brandId }: { brandId: string }) {
             </tbody>
           </table>
         </div>
-        {!loading && rows.length === 0 && (
-          <div className="state"><span className="emoji">👤</span> ยังไม่มีลูกค้า</div>
+        {!loading && shown.length === 0 && (
+          <div className="state">
+            <span className="emoji">👤</span> {filterTag ? `ไม่มีลูกค้าที่มีแท็ก "${filterTag}"` : 'ยังไม่มีลูกค้า'}
+          </div>
         )}
         {(loading || detailLoading) && <div className="state"><span className="spinner" /> กำลังโหลด…</div>}
       </div>

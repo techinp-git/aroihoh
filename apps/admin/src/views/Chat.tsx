@@ -15,6 +15,7 @@ import {
   type CustomerDetail,
 } from '../api';
 import { TagEditor } from '../components/Tags';
+import { Avatar, nameHue } from '../components/Avatar';
 
 const POLL_MS = 5000;
 
@@ -28,48 +29,9 @@ const sameThread = (a: ChatThread | null, b: ChatThread) =>
 const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
-// สีประจำแบรนด์ (deterministic จากชื่อ) — ใช้เป็นป้ายบอกว่าห้องนี้คุยผ่าน OA ไหน (US-40)
-const brandHue = (name: string) => {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return h;
-};
-// avatar โปรไฟล์ LINE — ไม่มีรูป/โหลดพัง = วงกลมตัวอักษรแรกสีตามชื่อ
-function Avatar({ name, url, size = 38 }: { name: string | null; url?: string | null; size?: number }) {
-  const [broken, setBroken] = useState(false);
-  const label = (name || '?').trim().charAt(0).toUpperCase();
-  const hue = brandHue(name || '?');
-  const common = { width: size, height: size, borderRadius: '50%', flexShrink: 0 } as const;
-  if (url && !broken) {
-    return (
-      <img
-        src={url}
-        alt=""
-        onError={() => setBroken(true)}
-        style={{ ...common, objectFit: 'cover', background: '#eee' }}
-      />
-    );
-  }
-  return (
-    <div
-      style={{
-        ...common,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontWeight: 700,
-        fontSize: size * 0.42,
-        background: `hsl(${hue} 65% 90%)`,
-        color: `hsl(${hue} 55% 34%)`,
-      }}
-    >
-      {label}
-    </div>
-  );
-}
-
+// ป้ายบอกว่าห้องนี้คุยผ่าน OA ไหน (US-40) — สีประจำแบรนด์ deterministic จากชื่อ
 function BrandChip({ name }: { name: string }) {
-  const hue = brandHue(name);
+  const hue = nameHue(name);
   return (
     <span
       style={{

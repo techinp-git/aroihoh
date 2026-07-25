@@ -29,6 +29,13 @@ export class CustomersController {
     return this.customers.list(brandId, q);
   }
 
+  // ⚠️ ต้องมาก่อน :id ไม่งั้น 'tags' จะไปชน param
+  @Get('tags')
+  tagCounts(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    assertBrandAccess(admin, brandId);
+    return this.customers.tagCounts(brandId);
+  }
+
   @Get(':id')
   detail(
     @CurrentAdmin() admin: AdminJwt,

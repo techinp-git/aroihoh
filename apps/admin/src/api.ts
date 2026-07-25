@@ -325,6 +325,11 @@ export const listCustomers = (brandId: string, q?: string) =>
 export const getCustomer = (brandId: string, id: string) =>
   adminFetch<CustomerDetail>(`/admin/customers/${id}?brandId=${encodeURIComponent(brandId)}`);
 
+// แท็กทั้งหมดที่ใช้จริงในแบรนด์ + จำนวนลูกค้าต่อแท็ก (ตัวกรองหน้าลูกค้า + tag picker broadcast)
+export interface TagCount { tag: string; count: number }
+export const listTagCounts = (brandId: string) =>
+  adminFetch<TagCount[]>(`/admin/customers/tags?brandId=${encodeURIComponent(brandId)}`);
+
 export const updateCustomerTags = (brandId: string, id: string, tags: string[]) =>
   adminFetch<{ id: string; tags: string[] }>(
     `/admin/customers/${id}/tags?brandId=${encodeURIComponent(brandId)}`,
