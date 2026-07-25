@@ -11,6 +11,7 @@
 - ✅ DEPLOY-1 **เสร็จแล้ว** 23 ก.ค.: prod รันที่ `49.13.57.24` (`/opt/aroihoh`, compose: api+postgis+redis) · `aroihoh-api/order/admin.jivecode.click` HTTPS ผ่าน Caddy บน host (Caddyfile ร่วมกับ health/jcorp/router — แก้ต้อง `caddy validate` ก่อน reload เสมอ) · seed แล้ว · คิว BullMQ ต่อ Redis ได้จริง · dev-login ปิด (403)
 - ⚠️ deploy gotchas ที่เจอจริง: seed ในคอนเทนเนอร์ต้อง `npx ts-node -O '{\"module\":\"commonjs\"}' prisma/seed.ts` (ESM พัง) · `VITE_API_BASE_URL` **ต้องมี `/api` ต่อท้าย** · เขียน log ที่ `/tmp` ไม่ได้ (มีของ project อื่น) ใช้ `/root/`
 - ⚠️ legal blocker ก่อนเก็บข้อมูลลูกค้าจริง: **PDPA pack** (privacy policy + consent + opt-out) ยังไม่มี — โค้ด opt-out พร้อมแล้วแต่เอกสารยังไม่ได้เขียน
+- ✅ ops (25 ก.ค.): prod มี **backup อัตโนมัติแล้ว** (`scripts/backup.sh` — DB+รูปแชต volume, cron ตี 3, retention 14 วัน) · **ENCRYPTION_KEY rotate เป็น random 64-hex จริงแล้ว** (เดิมเป็นสตริง comment ที่อยู่ใน repo) ด้วย `prisma/rotate-encryption-key.ts` — ห้ามแก้คีย์ตรง ๆ ต้องใช้ script (ดู deploy-hetzner.md)
 
 ## Source of truth
 - Backlog/task: AI Intranet → project `fb-project` (org `c46e73f8-0328-4627-bb51-df0eb4b70c47`)

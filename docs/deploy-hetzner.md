@@ -134,13 +134,28 @@ grep -o "https://aroihoh-api[^\"]*" /var/www/aroihoh-admin/assets/*.js | head -1
 
 > ค่าพวกนี้เก็บไว้ใน `.env.prod` ได้ แล้ว `set -a && . .env.prod && set +a` ก่อน build จะได้ไม่ต้องจำ
 
-## Backup DB (สำคัญ — Hetzner ไม่ auto ให้เหมือน managed)
+## Backup (สำคัญ — Hetzner ไม่ auto ให้เหมือน managed)
 
+`scripts/backup.sh` สำรอง **DB (pg_dump) + รูปแชต (volume `mediadata`)** → `/opt/backups` · retention 14 วัน
 ```bash
-# ตั้ง cron รายวัน (crontab -e)
-0 3 * * * docker compose -f /opt/aroihoh/docker-compose.prod.yml exec -T postgres pg_dump -U aroihoh aroihoh | gzip > /opt/backups/aroihoh-$(date +\%F).sql.gz
+# ติดตั้ง cron ตี 3 ทุกวัน (ทำครั้งเดียว)
+( crontab -l 2>/dev/null; echo "0 3 * * * /opt/aroihoh/scripts/backup.sh >> /opt/backups/backup.log 2>&1" ) | crontab -
+/opt/aroihoh/scripts/backup.sh   # รันมือทดสอบ 1 รอบ
 ```
-+ เปิด Hetzner snapshot/backup ของ volume เป็นชั้นสอง
+วิธีกู้คืนอยู่หัวไฟล์ `scripts/backup.sh` · + เปิด Hetzner snapshot ของ disk เป็นชั้นสอง
+
+## หมุนคีย์เข้ารหัส (ENCRYPTION_KEY rotation)
+
+⚠️ **ห้ามแก้ `ENCRYPTION_KEY` ใน `.env.prod` ตรง ๆ** — LINE secret/token เข้ารหัสด้วยคีย์เดิม ถอดไม่ออกทันที
+ใช้ `prisma/rotate-encryption-key.ts` (decrypt คีย์เก่า → re-encrypt คีย์ใหม่ ไม่ต้องกรอก LINE keys ใหม่):
+```bash
+cd /opt/aroihoh && NEW=$(openssl rand -hex 32)
+docker cp apps/api/prisma/rotate-encryption-key.ts aroihoh-api:/app/apps/api/prisma/
+docker exec -e NEWKEY="$NEW" -w /app/apps/api aroihoh-api sh -c \
+  'OLD_ENCRYPTION_KEY="$ENCRYPTION_KEY" ENCRYPTION_KEY="$NEWKEY" npx ts-node -O "{\"module\":\"commonjs\"}" prisma/rotate-encryption-key.ts'
+# rotate สำเร็จค่อย: อัปเดต .env.prod (ENCRYPTION_KEY=$NEW บรรทัดสะอาด ไม่มี comment ต่อท้าย) + up -d
+```
+> `ENCRYPTION_KEY` ต้องเป็น **hex ล้วนบรรทัดเดียว ห้ามมี `#`/วงเล็บ/ช่องว่างต่อท้าย** — ไม่งั้น `. .env.prod` (shell source) พัง
 
 ## หมายเหตุ
 
