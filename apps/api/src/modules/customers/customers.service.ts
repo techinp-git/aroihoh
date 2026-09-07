@@ -32,7 +32,20 @@ export class CustomersService {
     const c = await this.prisma.customer.findFirst({
       where: { id: customerId, brandId },
       include: {
-        addresses: { select: { id: true, label: true, detail: true, lat: true, lng: true } },
+        // US-58: ตารางเดียวเก็บทั้ง snapshot ของออเดอร์ (isSaved=false) และหมุดในสมุดที่อยู่
+        // หมุดที่ลูกค้าลบไปแล้ว (deletedAt) ไม่ต้องโชว์ — ป้ายแยก saved/snapshot ทำใน US-60
+        addresses: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            label: true,
+            detail: true,
+            note: true,
+            lat: true,
+            lng: true,
+            isSaved: true,
+          },
+        },
         orders: {
           orderBy: { createdAt: 'desc' },
           take: 20,

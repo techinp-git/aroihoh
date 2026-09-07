@@ -5,12 +5,20 @@ import { computeDeliveryFee } from './fee';
 import { isAccepting, nowHHMMBangkok } from '../store/store-hours';
 import type { DeliveryCheckResult } from '@aroihoh/shared';
 
+/** เหตุที่สั่งไม่ได้ — แยกเป็นรหัสเพื่อให้ caller ตัดสินใจต่างกันได้ ไม่ต้องอ่านข้อความไทย */
+export type DeliveryRejectCode =
+  | 'store_closed' // ร้านพัก/นอกเวลา — พรุ่งนี้ก็สั่งได้ ไม่ใช่ปัญหาของที่อยู่
+  | 'out_of_radius' // ไกลเกินรัศมีครัว — ที่อยู่นี้สั่งไม่ได้จริง ๆ
+  | 'no_fee_rule' // ไม่มีกฎค่าส่งครอบระยะนี้ (ตั้งค่าไม่ครบ)
+  | 'polygon_unsupported';
+
 export interface DeliveryQuote {
   kitchenId: string;
   inZone: boolean;
   distanceKm: number;
   deliveryFee?: number;
   reason?: string;
+  reasonCode?: DeliveryRejectCode;
 }
 
 @Injectable()
@@ -66,10 +74,22 @@ export class DeliveryService {
       nowHHMMBangkok(),
     );
     if (!acc.ok) {
-      return { kitchenId: kitchen.id, inZone: false, distanceKm, reason: acc.reason };
+      return {
+        kitchenId: kitchen.id,
+        inZone: false,
+        distanceKm,
+        reason: acc.reason,
+        reasonCode: 'store_closed',
+      };
     }
     if (!isWithinRadius(center, point, maxKm)) {
-      return { kitchenId: kitchen.id, inZone: false, distanceKm, reason: 'เกินระยะจัดส่ง' };
+      return {
+        kitchenId: kitchen.id,
+        inZone: false,
+        distanceKm,
+        reason: 'เกินระยะจัดส่ง',
+        reasonCode: 'out_of_radius',
+      };
     }
 
     const rule = kitchen.feeRules[0];
@@ -82,9 +102,24 @@ export class DeliveryService {
         inZone: false,
         distanceKm,
         reason: 'ไม่มีกฎค่าส่งที่ครอบระยะนี้',
+        reasonCode: 'no_fee_rule',
       };
     }
     return { kitchenId: kitchen.id, inZone: true, distanceKm, deliveryFee: fee };
+  }
+
+  /**
+   * US-58: ที่อยู่นี้ "ส่งถึงไหม" เชิงภูมิศาสตร์ล้วน — ไม่สนว่าตอนนี้ร้านเปิดหรือปิด
+   * ใช้โชว์ป้าย "นอกเขตส่ง" ในสมุดที่อยู่ ไม่งั้นตอนร้านปิดหมุดทุกอันจะขึ้นนอกเขตพร้อมกัน
+   * ⚠️ ห้ามใช้แทน quote() ตอนสร้างออเดอร์ — ตรงนั้นต้องเช็คเวลาทำการด้วย
+   */
+  async isDeliverable(brandId: string, point: { lat: number; lng: number }) {
+    const q = await this.quote(brandId, point);
+    return {
+      deliverable: q.inZone || q.reasonCode === 'store_closed',
+      distanceKm: q.distanceKm,
+      deliveryFee: q.deliveryFee,
+    };
   }
 
   /** US-03: LIFF เรียกเช็คเขตก่อนยืนยัน (ผล check เป็นแค่ UX — server re-check ตอนสร้างออเดอร์อีกที) */

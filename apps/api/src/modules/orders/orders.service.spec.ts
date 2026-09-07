@@ -1,4 +1,9 @@
-import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from './orders.service';
 
@@ -9,6 +14,8 @@ function makeService(overrides: {
   menuItems?: any[];
   createdCapture?: (data: any) => void;
   createImpl?: any;
+  savedAddress?: any; // US-58: หมุดในสมุดที่ findFirst จะคืน (null = ไม่ใช่ของลูกค้ารายนี้)
+  savedAddressCount?: number;
 }) {
   const prisma: any = {
     order: {
@@ -25,6 +32,12 @@ function makeService(overrides: {
     },
     brand: {
       findUnique: jest.fn().mockResolvedValue({ codEnabled: true }),
+    },
+    // US-58: สมุดที่อยู่
+    address: {
+      findFirst: jest.fn().mockResolvedValue(overrides.savedAddress ?? null),
+      count: jest.fn().mockResolvedValue(overrides.savedAddressCount ?? 0),
+      create: jest.fn().mockResolvedValue({ id: 'addr-new' }),
     },
   };
   const delivery: any = {
@@ -103,5 +116,108 @@ describe('OrdersService.create', () => {
     await expect(service.create(customer, baseDto)).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+});
+
+// US-58: ปลายทางของออเดอร์มาได้ 2 ทาง — สมุดที่อยู่ หรือหมุดที่ปักสด
+describe('OrdersService.create — ที่อยู่ปลายทาง (US-58)', () => {
+  const savedDto = {
+    idempotencyKey: 'key-saved',
+    items: [{ menuItemId: 'm1', qty: 1 }],
+    savedAddressId: 'addr-home',
+    paymentMethod: 'cod' as const,
+  };
+  const menu = [{ id: 'm1', name: 'กะเพรา', price: 6000, isAvailable: true }];
+
+  it('หมุดในสมุด: ใช้พิกัดจาก DB ไปเช็คเขต ไม่เชื่อพิกัดจาก client', async () => {
+    let captured: any;
+    const { service, delivery, prisma } = makeService({
+      menuItems: menu,
+      savedAddress: {
+        label: 'บ้าน',
+        detail: 'ซอย 23',
+        note: 'ชั้น 12',
+        lat: 13.75,
+        lng: 100.56,
+      },
+      createdCapture: (d) => (captured = d),
+    });
+    await service.create(customer, savedDto);
+
+    expect(delivery.quote).toHaveBeenCalledWith('brand-1', { lat: 13.75, lng: 100.56 });
+    // where ต้องผูกทั้ง customerId และ brandId (กันหยิบหมุดข้ามคน/ข้ามแบรนด์)
+    const where = prisma.address.findFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      id: 'addr-home',
+      customerId: 'cust-1',
+      brandId: 'brand-1',
+      isSaved: true,
+      deletedAt: null,
+    });
+    // ออเดอร์เก็บ snapshot ของตัวเอง ไม่ได้ผูกไปที่หมุดในสมุด
+    expect(captured.address.create).toMatchObject({
+      detail: 'ซอย 23',
+      note: 'ชั้น 12',
+      lat: 13.75,
+    });
+  });
+
+  it('หมุดของคนอื่น/ถูกลบแล้ว → 404 ไม่สร้างออเดอร์', async () => {
+    const { service, prisma } = makeService({ menuItems: menu, savedAddress: null });
+    await expect(service.create(customer, savedDto)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('ไม่ส่งทั้ง savedAddressId และ deliveryAddress → 400', async () => {
+    const { service } = makeService({ menuItems: menu });
+    await expect(
+      service.create(customer, { ...savedDto, savedAddressId: undefined } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('หมุดในสมุดก็ต้องเช็คเขตซ้ำ — ครัวย้ายแล้วนอกเขต → 422', async () => {
+    const { service, prisma } = makeService({
+      menuItems: menu,
+      savedAddress: { label: null, detail: 'ไกล', note: null, lat: 13.9, lng: 100.9 },
+      quote: { kitchenId: 'k1', inZone: false, distanceKm: 30, reason: 'เกินระยะจัดส่ง' },
+    });
+    await expect(service.create(customer, savedDto)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('saveAddress: ปักสด + ติ๊กบันทึก → เพิ่มเข้าสมุด และหมุดแรกเป็นหมุดหลัก', async () => {
+    const { service, prisma } = makeService({ menuItems: menu, savedAddressCount: 0 });
+    await service.create(customer, {
+      ...baseDto,
+      idempotencyKey: 'key-save',
+      saveAddress: true,
+    } as any);
+    expect(prisma.address.create).toHaveBeenCalled();
+    const data = prisma.address.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ isSaved: true, isDefault: true, brandId: 'brand-1' });
+  });
+
+  it('saveAddress: สมุดเต็ม 5 หมุด → ข้ามการบันทึก แต่ออเดอร์ยังสำเร็จ', async () => {
+    const { service, prisma } = makeService({ menuItems: menu, savedAddressCount: 5 });
+    const res: any = await service.create(customer, {
+      ...baseDto,
+      idempotencyKey: 'key-full',
+      saveAddress: true,
+    } as any);
+    expect(res.id).toBe('order-1');
+    expect(prisma.address.create).not.toHaveBeenCalled();
+  });
+
+  it('สั่งด้วยหมุดในสมุด + saveAddress → ไม่บันทึกซ้ำเข้าสมุดอีก', async () => {
+    const { service, prisma } = makeService({
+      menuItems: menu,
+      savedAddress: { label: 'บ้าน', detail: 'ซอย 23', note: null, lat: 13.75, lng: 100.56 },
+    });
+    await service.create(customer, { ...savedDto, saveAddress: true } as any);
+    expect(prisma.address.create).not.toHaveBeenCalled();
   });
 });

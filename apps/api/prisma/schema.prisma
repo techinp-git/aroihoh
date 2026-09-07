@@ -71,6 +71,7 @@ model Brand {
   categories    MenuCategory[]
   menuItems     MenuItem[]
   customers     Customer[]
+  addresses     Address[]
   orders        Order[]
   payments      Payment[]
   messageLogs   MessageLog[]
@@ -199,19 +200,31 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+/// US-58: ตารางเดียว 2 บทบาท แยกด้วย isSaved
+///  - isSaved=false → snapshot ที่อยู่ของออเดอร์ (ออเดอร์ชี้แถวนี้เสมอ)
+///  - isSaved=true  → หมุดในสมุดที่อยู่ของลูกค้า (สูงสุด 5, default ได้ 1 — บังคับใน profile.service)
+/// แก้/ลบหมุดในสมุดจึงไม่กระทบออเดอร์เก่า เพราะคนละแถวกัน
 model Address {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
+  brandId    String // tenant key (กติกาเหล็ก #1) — ที่อยู่ไม่แชร์ข้ามแบรนด์
   customerId String
-  label      String?
+  label      String? // "บ้าน" | "ที่ทำงาน" | ตั้งเอง
   detail     String
+  note       String? // ชั้น/ห้อง/จุดสังเกต — ให้ไรเดอร์อ่าน
   lat        Float
   lng        Float
-  createdAt  DateTime @default(now())
+  isSaved    Boolean   @default(false)
+  isDefault  Boolean   @default(false)
+  deletedAt  DateTime? // soft delete — ออเดอร์เก่ายังชี้ได้
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
+  brand    Brand    @relation(fields: [brandId], references: [id])
   customer Customer @relation(fields: [customerId], references: [id])
   orders   Order[]
 
-  @@index([customerId])
+  @@index([customerId, isSaved])
+  @@index([brandId])
   @@map("addresses")
 }
 

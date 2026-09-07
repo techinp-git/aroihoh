@@ -1,6 +1,6 @@
 # แผน: โปรไฟล์ลูกค้าใน LIFF (EP-15 Customer Profile)
 
-สถานะ: **Proposed** (8 ก.ย. 2026) — คู่กับ `plan-loyalty-qr.md` (EP-14) · โปรไฟล์เป็น "บ้าน" ของลูกค้า: ที่อยู่หลายหมุด + แต้ม + รางวัล + ตั้งค่า
+สถานะ: **US-58 done** (8 ก.ย. 2026) — US-59/60 ยังไม่เริ่ม — คู่กับ `plan-loyalty-qr.md` (EP-14) · โปรไฟล์เป็น "บ้าน" ของลูกค้า: ที่อยู่หลายหมุด + แต้ม + รางวัล + ตั้งค่า
 
 ## 1. โจทย์
 - ลูกค้ามี**หลายหมุด** (บ้าน / ที่ทำงาน / คอนโดแฟน) เลือกตอนสั่งได้โดยไม่ต้องปักใหม่ทุกครั้ง
@@ -67,8 +67,12 @@ model Address {
 | GET | `/me/addresses` | เฉพาะ isSaved && deletedAt null · แต่ละอันแนบ `deliverable` (คำนวณสด) |
 | POST | `/me/addresses` | `{label, detail, note?, lat, lng, isDefault?}` · 422 ถ้าเกิน 5 · คืน deliverable |
 | PATCH | `/me/addresses/:id` | เจ้าของเท่านั้น (404 ถ้าไม่ใช่) |
-| DELETE | `/me/addresses/:id` | soft delete · ถ้าเป็น default → ไม่มี default |
+| DELETE | `/me/addresses/:id` | soft delete · ถ้าเป็น default → **เลื่อนหมุดที่แก้ล่าสุดขึ้นเป็น default แทน** (ต่างจากร่างแรกที่ให้ไม่มี default — เช็คเอาต์ควรมีตัวเลือกตั้งต้นเสมอ) |
 | POST | `/orders` (เดิม) | รับเพิ่ม `savedAddressId` **หรือ** `deliveryAddress` เดิม · ถ้า savedAddressId: ต้องเป็นของ customer นี้ + ยังไม่ลบ → copy เป็น snapshot · **เช็คเขตซ้ำ server-side เสมอ** (กติกา #5 ไม่เปลี่ยน) · body มี `saveAddress: true` = บันทึกที่อยู่ใหม่เข้าสมุดด้วย |
+
+ทุก endpoint ของสมุดที่อยู่คืน `{ addresses: [...] }` (POST คืน `created` เพิ่ม) — LIFF แทนที่ state ได้ในคำขอเดียว ไม่ต้องยิง GET ตาม
+
+`saveAddress:true` ตอนเช็คเอาต์แล้วสมุดเต็ม 5 = **ข้ามการบันทึกเงียบ ๆ ออเดอร์ยังสำเร็จ** (ไม่ให้เรื่องจดที่อยู่ทำให้สั่งอาหารล้ม) · LIFF รู้จำนวนหมุดจาก `/me/profile` อยู่แล้ว จึงปิดช็อยส์ให้ก่อนได้
 
 Admin: หน้าลูกค้า (US-35) โชว์สมุดที่อยู่แยกจาก snapshot (ป้าย "บันทึกไว้") — เปลี่ยนแค่ select/label
 
@@ -97,14 +101,23 @@ Admin: หน้าลูกค้า (US-35) โชว์สมุดที่�
 ## 8. แตกงาน
 | story | เนื้อหา | ประมาณ |
 |---|---|---|
-| US-58 | migration 0015 (brandId backfill + isSaved/isDefault/note/updatedAt/deletedAt) · module `profile` (GET/PATCH /me/profile, CRUD /me/addresses ≤5, default 1 อัน, deliverable สด) · orders รับ `savedAddressId` + `saveAddress` (snapshot copy, re-check เขต) · e2e: ข้ามลูกค้า 404, เกิน 5 = 422, สั่งด้วย savedAddressId แล้วแก้ที่อยู่ไม่กระทบออเดอร์ | 6 ชม. |
+| US-58 ✅ | migration 0015 (brandId backfill + isSaved/isDefault/note/updatedAt/deletedAt) · module `profile` (GET/PATCH /me/profile, CRUD /me/addresses ≤5, default 1 อัน, deliverable สด) · orders รับ `savedAddressId` + `saveAddress` (snapshot copy, re-check เขต) · e2e: ข้ามลูกค้า 404, เกิน 5 = 422, สั่งด้วย savedAddressId แล้วแก้ที่อยู่ไม่กระทบออเดอร์ | 6 ชม. |
 | US-59 | LIFF: bottom nav 3 แท็บ + deep link `?view=` · หน้าโปรไฟล์ (หัว/การ์ดแต้ม/ที่อยู่/ออเดอร์ล่าสุด/ตั้งค่า) · สมุดที่อยู่ เพิ่ม/แก้/ลบ/ตั้ง default (reuse AddressPicker) · เช็คเอาต์เลือกชิปที่อยู่ + "บันทึกที่อยู่นี้" | 8 ชม. |
 | US-60 | ตั้งค่าโปรไฟล์: เบอร์โทร (encrypt, โชว์ 4 ตัวท้าย) · สวิตช์รับข่าวสาร (PDPA self-service) · ลิงก์ privacy policy · admin หน้าลูกค้าแยกป้าย "บันทึกไว้" | 3 ชม. |
 
 ลำดับ: US-58 → US-59 → US-60 · การ์ดแต้มในโปรไฟล์โชว์เมื่อ EP-14 US-50 ลงแล้ว (ก่อนหน้านั้นซ่อนการ์ด ไม่บล็อกกัน)
 
-## 9. ต้องตัดสินใจ
+## 9. ตัดสินใจแล้ว / ยังค้าง
+เคาะแล้ว (8 ก.ย. 2026):
+- **จำกัด 5 หมุดต่อลูกค้า** (`MAX_SAVED_ADDRESSES` ใน `profile/address-book.ts`)
+- **ที่อยู่ไม่แชร์ข้ามแบรนด์** — `addresses.brandId` เป็น tenant key, ทุก query กรองทั้ง customerId และ brandId
+
+ยังค้าง (เป็นเรื่องของ US-59/60 ไม่บล็อก US-58):
 1. **แท็บ 3 อัน (เมนู/แต้ม/โปรไฟล์)** หรือ 2 อัน (เมนู/โปรไฟล์ แล้วแต้มอยู่ในโปรไฟล์) — แนะนำ 3 เพราะแต้มคือตัวดึงให้เปิดแอป
-2. จำกัดหมุด 5 พอไหม
-3. เบอร์โทรจำเป็นตอนสั่งไหม (ตอนนี้ไม่บังคับ) — ถ้าบังคับ ต้องแก้ checkout ด้วย
-4. ที่อยู่แชร์ข้ามแบรนด์ไหม (ตอนนี้แยกตาม customer ต่อแบรนด์ — เหมือนข้อ 6 ของ EP-14)
+2. เบอร์โทรจำเป็นตอนสั่งไหม (ตอนนี้ไม่บังคับ) — ถ้าบังคับ ต้องแก้ checkout ด้วย
+
+## 10. บันทึกตอนลง US-58 (8 ก.ย. 2026)
+- `delivery.service` เพิ่ม `reasonCode` (`store_closed` / `out_of_radius` / `no_fee_rule`) + เมธอด `isDeliverable()` — สมุดที่อยู่ต้องแยก "ส่งไม่ถึง" ออกจาก "ร้านปิดอยู่ตอนนี้" ไม่งั้นตอนร้านปิดหมุดทุกอันขึ้นนอกเขตพร้อมกัน · `quote()` ที่ใช้ตอนสร้างออเดอร์ยังเช็คเวลาทำการเหมือนเดิม
+- `orders.service` เช็คเขตซ้ำแม้สั่งด้วยหมุดจากสมุด (ครัวย้าย/รัศมีเปลี่ยนได้หลังบันทึกหมุด)
+- ⚠️ gotcha e2e: `uuid()` ใน `test/e2e.mjs` คืน `e2e-<timestamp>-<rand>` — **ห้าม `.slice(0,8)`** ได้ชื่อซ้ำข้ามรอบ (dev-login upsert ตามชื่อ → ลูกค้าเก่ามี 5 หมุดค้าง เทสต์เพดานพัง) ใช้ทั้งก้อน
+- ยังไม่ทำ (อยู่ใน US-59/60): UI ทั้งหมด, ป้ายแยก saved/snapshot ในหน้า admin

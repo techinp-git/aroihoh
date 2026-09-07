@@ -21,6 +21,7 @@ import { AudiencesModule } from './modules/audiences/audiences.module';
 import { LineModule } from './modules/line/line.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MediaModule } from './modules/media/media.module';
+import { ProfileModule } from './modules/profile/profile.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { MediaModule } from './modules/media/media.module';
     ReportsModule,
     PaymentsModule,
     CustomersModule,
+    ProfileModule,
     ChatModule,
     StoreModule,
     BroadcastsModule,

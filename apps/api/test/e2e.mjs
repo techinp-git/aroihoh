@@ -245,6 +245,173 @@ async function main() {
   const mine = await req('GET', `/orders/${order.id}`, { token: custToken });
   ok(mine.status === 200 && mine.body?.id === order.id, 'เจ้าของดูออเดอร์ตัวเองได้');
 
+  // 11b) US-58: โปรไฟล์ + สมุดที่อยู่ (ปักได้หลายหมุด สูงสุด 5, ไม่แชร์ข้ามแบรนด์)
+  //      ใช้ลูกค้าใหม่ทุกครั้งที่รัน เพื่อให้เทสต์เพดาน 5 หมุดซ้ำได้ (dev-login upsert ตามชื่อ)
+  //      ⚠️ ต้องใช้ uuid() เต็ม — ขึ้นต้นด้วย 'e2e-<timestamp>' การตัดตัวหน้าจะได้ชื่อซ้ำข้ามรอบ
+  const addrCust = await req('POST', '/auth/dev-login', {
+    body: { brandId, name: 'e2e-addr-' + uuid() },
+  });
+  const addrToken = addrCust.body?.accessToken;
+
+  const noAuth = await req('GET', '/me/profile');
+  ok(noAuth.status === 401, 'GET /me/profile ไม่มี token → 401', `ได้ ${noAuth.status}`);
+
+  const prof0 = await req('GET', '/me/profile', { token: addrToken });
+  ok(is2xx(prof0.status), 'GET /me/profile', JSON.stringify(prof0.body));
+  ok(Array.isArray(prof0.body?.addresses) && prof0.body.addresses.length === 0, 'ลูกค้าใหม่ยังไม่มีหมุด');
+  ok(prof0.body?.addressLimit === 5, 'เพดานสมุดที่อยู่ = 5');
+  ok(prof0.body?.hasPhone === false && prof0.body?.phoneLast4 === null, 'ยังไม่มีเบอร์โทร');
+  ok(prof0.body?.phoneEnc === undefined, '/me/profile ไม่คืน phoneEnc (PDPA)');
+
+  // หมุดแรก (ในเขต) → ต้องเป็นหมุดหลักอัตโนมัติ + ส่งถึงได้
+  const a1 = await req('POST', '/me/addresses', {
+    token: addrToken,
+    body: { label: 'บ้าน', detail: 'คอนโดใกล้ครัว', note: 'ชั้น 12 ฝาก รปภ.', ...IN_ZONE },
+  });
+  ok(is2xx(a1.status) && a1.body?.created, 'เพิ่มหมุดแรกได้', JSON.stringify(a1.body));
+  const homeId = a1.body?.created;
+  const home = (a1.body?.addresses || []).find((x) => x.id === homeId);
+  ok(home?.isDefault === true, 'หมุดแรกเป็นหมุดหลักอัตโนมัติ');
+  ok(home?.deliverable === true, 'หมุดในเขต → deliverable true');
+  ok(home?.note === 'ชั้น 12 ฝาก รปภ.', 'เก็บโน้ตจุดสังเกตได้');
+
+  // หมุดนอกเขต — บันทึกได้ แต่ต้องบอกว่าส่งไม่ถึง
+  const a2 = await req('POST', '/me/addresses', {
+    token: addrToken,
+    body: { label: 'ที่ทำงาน', detail: 'ออฟฟิศไกล', ...OUT_ZONE },
+  });
+  ok(is2xx(a2.status), 'บันทึกหมุดนอกเขตได้');
+  const workId = a2.body?.created;
+  const work = (a2.body?.addresses || []).find((x) => x.id === workId);
+  ok(work?.deliverable === false, 'หมุดนอกเขต → deliverable false');
+
+  // เพดาน 5 หมุด
+  for (let i = 3; i <= 5; i++) {
+    await req('POST', '/me/addresses', {
+      token: addrToken,
+      body: { label: 'หมุด ' + i, detail: 'ที่อยู่ ' + i, ...IN_ZONE },
+    });
+  }
+  const a6 = await req('POST', '/me/addresses', {
+    token: addrToken,
+    body: { label: 'เกิน', detail: 'หมุดที่ 6', ...IN_ZONE },
+  });
+  ok(a6.status === 422 && a6.body?.code === 'ADDRESS_LIMIT', 'หมุดที่ 6 → 422 ADDRESS_LIMIT', `ได้ ${a6.status}`);
+
+  // ตั้งหมุดหลักใหม่ → ต้องมีหมุดหลักอันเดียว
+  const setDefault = await req('PATCH', `/me/addresses/${workId}`, {
+    token: addrToken,
+    body: { isDefault: true },
+  });
+  const defaults = (setDefault.body?.addresses || []).filter((x) => x.isDefault);
+  ok(defaults.length === 1 && defaults[0].id === workId, 'ตั้งหมุดหลักใหม่ → มีหมุดหลักอันเดียว');
+  ok(setDefault.body?.addresses?.[0]?.id === workId, 'หมุดหลักถูกเรียงขึ้นก่อน');
+
+  // tenant/owner isolation — ลูกค้าอื่นแตะหมุดเราไม่ได้
+  const peekAddr = await req('PATCH', `/me/addresses/${homeId}`, {
+    token: otherToken,
+    body: { label: 'ยึดหมุด' },
+  });
+  ok(peekAddr.status === 404, 'ลูกค้าอื่นแก้หมุดเรา → 404', `ได้ ${peekAddr.status}`);
+  const delOther = await req('DELETE', `/me/addresses/${homeId}`, { token: otherToken });
+  ok(delOther.status === 404, 'ลูกค้าอื่นลบหมุดเรา → 404', `ได้ ${delOther.status}`);
+
+  // สั่งด้วยหมุดในสมุด — server ใช้พิกัดจาก DB และ snapshot ที่อยู่ลงออเดอร์
+  const savedOrder = await req('POST', '/orders', {
+    token: addrToken,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      savedAddressId: homeId,
+      paymentMethod: 'cod',
+    },
+  });
+  ok(is2xx(savedOrder.status), 'สั่งด้วย savedAddressId สำเร็จ', JSON.stringify(savedOrder.body));
+  const savedOrderId = savedOrder.body?.id;
+
+  // หมุดนอกเขตต้องถูกปฏิเสธเหมือนกัน (เช็คเขตซ้ำ ไม่เชื่อว่าเคยบันทึกไว้แล้วแปลว่าส่งได้)
+  const outSaved = await req('POST', '/orders', {
+    token: addrToken,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      savedAddressId: workId,
+      paymentMethod: 'cod',
+    },
+  });
+  ok(outSaved.status === 422, 'สั่งด้วยหมุดนอกเขต → 422', `ได้ ${outSaved.status}`);
+
+  // หมุดของคนอื่น → 404 (ไม่บอกว่ามีอยู่จริง)
+  const stolen = await req('POST', '/orders', {
+    token: otherToken,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      savedAddressId: homeId,
+      paymentMethod: 'cod',
+    },
+  });
+  ok(stolen.status === 404, 'สั่งด้วยหมุดของคนอื่น → 404', `ได้ ${stolen.status}`);
+
+  // ไม่ส่งที่อยู่เลย → 400
+  const noAddr = await req('POST', '/orders', {
+    token: addrToken,
+    body: { idempotencyKey: uuid(), items: [{ menuItemId: item.id, qty: 1 }], paymentMethod: 'cod' },
+  });
+  ok(noAddr.status === 400, 'ไม่ส่งที่อยู่เลย → 400', `ได้ ${noAddr.status}`);
+
+  // ⭐ หัวใจของ US-58: แก้หมุดในสมุดแล้ว ที่อยู่บนออเดอร์เก่าต้องไม่เปลี่ยน (snapshot)
+  await req('PATCH', `/me/addresses/${homeId}`, {
+    token: addrToken,
+    body: { detail: 'ย้ายบ้านแล้ว', note: 'บ้านใหม่' },
+  });
+  const kdsAfter = await req('GET', '/admin/kitchen/orders', { token: adminToken });
+  const snap = (kdsAfter.body || []).find((o) => o.id === savedOrderId);
+  ok(
+    snap?.address?.detail === 'คอนโดใกล้ครัว',
+    'แก้หมุดในสมุด → ที่อยู่บนออเดอร์เก่าไม่เปลี่ยน (snapshot)',
+    `ได้ ${snap?.address?.detail}`,
+  );
+
+  // ลบหมุดหลัก → หมุดอื่นเลื่อนขึ้นเป็นหมุดหลักแทน (เช็คเอาต์ยังมีตัวเลือกตั้งต้น)
+  const removed = await req('DELETE', `/me/addresses/${workId}`, { token: addrToken });
+  ok(is2xx(removed.status), 'ลบหมุดได้');
+  ok((removed.body?.addresses || []).every((x) => x.id !== workId), 'หมุดที่ลบหายจากสมุด');
+  ok((removed.body?.addresses || []).filter((x) => x.isDefault).length === 1, 'ลบหมุดหลัก → เลื่อนหมุดอื่นขึ้นแทน');
+
+  // saveAddress ตอนเช็คเอาต์ — ปักสด + ติ๊กบันทึก
+  const beforeSave = (await req('GET', '/me/addresses', { token: addrToken })).body?.addresses?.length;
+  await req('DELETE', `/me/addresses/${homeId}`, { token: addrToken }); // เว้นที่ให้ไม่ชนเพดาน
+  await req('POST', '/orders', {
+    token: addrToken,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { label: 'ที่ใหม่จากเช็คเอาต์', detail: 'ปักสดแล้วติ๊กบันทึก', ...IN_ZONE },
+      saveAddress: true,
+      paymentMethod: 'cod',
+    },
+  });
+  const afterSave = (await req('GET', '/me/addresses', { token: addrToken })).body?.addresses || [];
+  ok(
+    afterSave.some((x) => x.label === 'ที่ใหม่จากเช็คเอาต์'),
+    'saveAddress: ติ๊กบันทึกตอนเช็คเอาต์ → หมุดเข้าสมุด',
+    `ก่อน ${beforeSave} หลัง ${afterSave.length}`,
+  );
+
+  // PATCH /me/profile — เบอร์โทร (เข้ารหัสเก็บ, คืนแค่ 4 ตัวท้าย) + opt-out ข่าวสาร (PDPA)
+  const badPhone = await req('PATCH', '/me/profile', { token: addrToken, body: { phone: '123' } });
+  ok(badPhone.status === 400, 'เบอร์ผิดรูปแบบ → 400', `ได้ ${badPhone.status}`);
+  const setPhone = await req('PATCH', '/me/profile', {
+    token: addrToken,
+    body: { phone: '081-234-5678', marketingOptedOut: true },
+  });
+  ok(setPhone.body?.hasPhone === true && setPhone.body?.phoneLast4 === '5678', 'บันทึกเบอร์ → คืนแค่ 4 ตัวท้าย');
+  ok(setPhone.body?.phone === undefined && setPhone.body?.phoneEnc === undefined, 'ไม่คืนเบอร์เต็ม/ค่าที่เข้ารหัส (PDPA)');
+  ok(setPhone.body?.marketingOptedOut === true, 'ลูกค้ากด opt-out ข่าวสารเองได้ (PDPA)');
+  const clearPhone = await req('PATCH', '/me/profile', { token: addrToken, body: { phone: '' } });
+  ok(clearPhone.body?.hasPhone === false, 'ลบเบอร์ทิ้งได้');
+
   // 12) RBAC — customer JWT ห้ามเข้า admin endpoint
   const forbidden = await req('GET', `/admin/orders?brandId=${brandId}`, { token: custToken });
   ok(forbidden.status === 401 || forbidden.status === 403, 'customer JWT เข้า /admin → 401/403', `ได้ ${forbidden.status}`);

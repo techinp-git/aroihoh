@@ -14,6 +14,18 @@ import { canTransition } from './status';
 import { OrderEventsService } from './order-events.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { canAddSavedAddress, normalizeLabel } from '../profile/address-book';
+
+/** ปลายทางที่ตกลงได้แล้ว ก่อนเอาไปเช็คเขต/เขียน snapshot */
+interface DeliveryTarget {
+  label: string | null;
+  detail: string;
+  note: string | null;
+  lat: number;
+  lng: number;
+  /** มาจากหมุดในสมุด → ห้ามบันทึกซ้ำเข้าสมุดอีก */
+  fromAddressBook: boolean;
+}
 
 @Injectable()
 export class OrdersService {
@@ -25,6 +37,71 @@ export class OrdersService {
   ) {}
 
   private readonly orderInclude = { items: true } satisfies Prisma.OrderInclude;
+
+  /**
+   * US-58: หาปลายทางของออเดอร์ — จากสมุดที่อยู่ หรือหมุดที่ปักสด
+   * หมุดในสมุดต้องเป็นของลูกค้า+แบรนด์นี้ และยังไม่ถูกลบ ไม่งั้น 404 (ไม่ใช่ 403 — ไม่บอกว่ามีอยู่จริง)
+   */
+  private async resolveDeliveryTarget(
+    customerId: string,
+    brandId: string,
+    dto: CreateOrderDto,
+  ): Promise<DeliveryTarget> {
+    if (dto.savedAddressId) {
+      const saved = await this.prisma.address.findFirst({
+        where: {
+          id: dto.savedAddressId,
+          customerId,
+          brandId,
+          isSaved: true,
+          deletedAt: null,
+        },
+        select: { label: true, detail: true, note: true, lat: true, lng: true },
+      });
+      if (!saved) throw new NotFoundException('ไม่พบที่อยู่ที่บันทึกไว้');
+      return { ...saved, fromAddressBook: true };
+    }
+    if (dto.deliveryAddress) {
+      const a = dto.deliveryAddress;
+      return {
+        label: normalizeLabel(a.label),
+        detail: a.detail,
+        note: a.note?.trim() || null,
+        lat: a.lat,
+        lng: a.lng,
+        fromAddressBook: false,
+      };
+    }
+    throw new BadRequestException('ต้องระบุ savedAddressId หรือ deliveryAddress อย่างใดอย่างหนึ่ง');
+  }
+
+  /**
+   * ติ๊ก "บันทึกที่อยู่นี้ไว้" ตอนเช็คเอาต์
+   * สมุดเต็ม (5) = ข้ามไปเงียบ ๆ ไม่ทำให้ออเดอร์ล้ม — การสั่งอาหารสำคัญกว่าการจดที่อยู่
+   * (LIFF รู้จำนวนหมุดจาก /me/profile อยู่แล้ว จึงปิดช็อยส์นี้ให้ก่อนได้)
+   */
+  private async saveToAddressBook(
+    customerId: string,
+    brandId: string,
+    target: DeliveryTarget,
+  ) {
+    const where = { customerId, brandId, isSaved: true, deletedAt: null };
+    const count = await this.prisma.address.count({ where });
+    if (!canAddSavedAddress(count)) return;
+    await this.prisma.address.create({
+      data: {
+        brandId,
+        customerId,
+        label: target.label,
+        detail: target.detail,
+        note: target.note,
+        lat: target.lat,
+        lng: target.lng,
+        isSaved: true,
+        isDefault: count === 0, // หมุดแรกเป็นหมุดหลักให้เลย
+      },
+    });
+  }
 
   /**
    * US-04: ยืนยัน/สร้างออเดอร์
@@ -53,10 +130,12 @@ export class OrdersService {
       }
     }
 
-    // 2) server-side re-check เขต + ค่าส่ง (กติกาเหล็ก #5)
+    // 2) หาปลายทาง แล้ว server-side re-check เขต + ค่าส่ง (กติกาเหล็ก #5)
+    //    หมุดจากสมุดก็ต้องเช็คซ้ำ — ครัวย้าย/รัศมีเปลี่ยนได้หลังบันทึกหมุดไว้
+    const target = await this.resolveDeliveryTarget(customerId, brandId, dto);
     const quote = await this.delivery.quote(brandId, {
-      lat: dto.deliveryAddress.lat,
-      lng: dto.deliveryAddress.lng,
+      lat: target.lat,
+      lng: target.lng,
     });
     if (!quote.inZone) {
       throw new UnprocessableEntityException({
@@ -111,13 +190,17 @@ export class OrdersService {
           total: pricing.total,
           note: dto.note,
           idempotencyKey: dto.idempotencyKey,
+          // US-58: ออเดอร์ชี้ snapshot เสมอ (isSaved=false) ไม่ชี้หมุดในสมุด
+          //         → ลูกค้าแก้/ลบหมุดทีหลัง ที่อยู่บนออเดอร์เก่าและใบไรเดอร์ไม่เปลี่ยน
           address: {
             create: {
+              brand: { connect: { id: brandId } },
               customer: { connect: { id: customerId } },
-              label: dto.deliveryAddress.label,
-              detail: dto.deliveryAddress.detail,
-              lat: dto.deliveryAddress.lat,
-              lng: dto.deliveryAddress.lng,
+              label: target.label,
+              detail: target.detail,
+              note: target.note,
+              lat: target.lat,
+              lng: target.lng,
             },
           },
           items: { create: orderItems },
@@ -134,6 +217,10 @@ export class OrdersService {
       // US-08/09: ส่งใบยืนยัน Flex ให้ลูกค้าผ่านคิว (dedupe confirm:orderId — กดซ้ำไม่ส่งซ้ำ)
       // ห้าม await: ลูกค้าไม่ควรรอ LINE และ push พังต้องไม่ทำให้สร้างออเดอร์พัง
       void this.notify.notifyOrderConfirmed(brandId, created.id, customerId).catch(() => undefined);
+      // US-58: ติ๊ก "บันทึกที่อยู่นี้ไว้" — ทำหลังออเดอร์สำเร็จ และห้ามให้พังลามมาทำออเดอร์ล้ม
+      if (dto.saveAddress && !target.fromAddressBook) {
+        await this.saveToAddressBook(customerId, brandId, target).catch(() => undefined);
+      }
       return created;
     } catch (e) {
       // unique violation ที่ idempotencyKey
