@@ -312,7 +312,14 @@ export interface CustomerRow {
   tags: string[]; marketingOptedOut?: boolean; createdAt: string;
   orderCount: number; totalSpent: number; lastOrderAt: string | null;
 }
+export interface LoyaltyLedgerRow {
+  id: string; type: 'earn' | 'redeem' | 'adjust' | 'expire';
+  points: number; note: string | null; createdAt: string;
+}
 export interface CustomerDetail extends CustomerRow {
+  /** US-55: ยอดแต้ม + ประวัติล่าสุด */
+  pointsBalance: number;
+  loyaltyLedger: LoyaltyLedgerRow[];
   // US-58: isSaved แยก "สมุดที่อยู่ของลูกค้า" ออกจาก "ที่อยู่ที่ติดมากับออเดอร์" (snapshot)
   addresses: {
     id: string; label: string | null; detail: string; note: string | null;
@@ -606,4 +613,30 @@ export const setLoyaltyBatchStatus = (brandId: string, id: string, status: 'draf
 export const listLoyaltyCodes = (brandId: string, batchId: string) =>
   adminFetch<LoyaltyCodesResult>(
     `/admin/loyalty/batches/${batchId}/codes?brandId=${encodeURIComponent(brandId)}`,
+  );
+
+// ── US-55: รายงานแต้ม + ปรับแต้มมือ + เพดานสแกน/วัน ──
+export interface LoyaltyReport {
+  days: number;
+  dailyEarnCap: number;
+  totals: { earned: number; redeemed: number; scans: number; outstandingPoints: number; customers: number };
+  daily: { date: string; earned: number; redeemed: number }[];
+  batches: { id: string; name: string; status: string; points: number; codeCount: number; usedCount: number }[];
+  anomalies: {
+    customerId: string; displayName: string | null; scans: number;
+    windowMinutes: number; threshold: number; firstAt: string; lastAt: string;
+  }[];
+}
+export const getLoyaltyReport = (brandId: string, days = 14) =>
+  adminFetch<LoyaltyReport>(`/admin/loyalty/report?brandId=${encodeURIComponent(brandId)}&days=${days}`);
+
+export const setLoyaltyDailyCap = (brandId: string, dailyEarnCap: number) =>
+  adminFetch<{ dailyEarnCap: number }>(`/admin/loyalty/settings?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'PATCH', body: JSON.stringify({ dailyEarnCap }),
+  });
+
+export const adjustCustomerPoints = (brandId: string, customerId: string, points: number, note: string) =>
+  adminFetch<{ balance: number; points: number }>(
+    `/admin/loyalty/customers/${customerId}/adjust?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'POST', body: JSON.stringify({ points, note }) },
   );

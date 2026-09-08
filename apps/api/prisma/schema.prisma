@@ -53,6 +53,9 @@ model Brand {
   // US-19: ค่าใช้จ่ายคงที่ต่อวัน (สตางค์) — ค่าเช่า/คน/การตลาด เฉลี่ยต่อวัน ใช้หาจุดคุ้มทุน
   fixedCostDaily Int?
 
+  /// US-55: สแกน QR สะสมแต้มได้กี่ใบต่อวันต่อลูกค้า 1 คน (null = ใช้ค่าเริ่มต้นในโค้ด)
+  loyaltyDailyEarnCap Int?
+
   // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
   lineChannelId        String? // Messaging API channel — ส่ง/รับข้อความ
   lineChannelSecretEnc String?

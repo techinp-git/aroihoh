@@ -45,3 +45,14 @@ export class UpdateRewardDto {
   @IsOptional() @IsInt() sortOrder?: number;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
+
+/** US-55: ปรับแต้มด้วยมือ (owner) — ต้องมีเหตุผลเสมอ เพราะลง ledger + audit log */
+export class AdjustPointsDto {
+  @IsInt() points: number;
+  @IsString() @IsNotEmpty() @MaxLength(200) note: string;
+}
+
+/** US-55: เพดานสแกนต่อวันของแบรนด์ (0/ไม่ส่ง = กลับไปใช้ค่าเริ่มต้น) */
+export class DailyCapDto {
+  @IsOptional() @IsInt() @Min(0) @Max(1000) dailyEarnCap?: number;
+}

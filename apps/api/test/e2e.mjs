@@ -585,6 +585,59 @@ async function main() {
   });
   ok(offCross.status === 403 || offCross.status === 404, 'แก้รางวัลข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${offCross.status}`);
 
+  // US-55: เพดานสแกนต่อวัน + ปรับแต้มมือ + รายงาน
+  const capCust = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-cap-' + uuid() } });
+  const capTok = capCust.body?.accessToken;
+  const capCustId = capCust.body?.customer?.id;
+  const capBatch = await req('POST', '/admin/loyalty/batches', {
+    token: adminToken, body: { brandId, name: 'E2E ล็อตทดสอบเพดาน', points: 1, quantity: 3 },
+  });
+  await req('PATCH', `/admin/loyalty/batches/${capBatch.body.id}?brandId=${brandId}`, {
+    token: adminToken, body: { status: 'active' },
+  });
+  const capCodes = (await req('GET', `/admin/loyalty/batches/${capBatch.body.id}/codes?brandId=${brandId}`, { token: adminToken })).body.codes;
+
+  const setCap = await req('PATCH', `/admin/loyalty/settings?brandId=${brandId}`, {
+    token: adminToken, body: { dailyEarnCap: 1 },
+  });
+  ok(is2xx(setCap.status) && setCap.body?.dailyEarnCap === 1, 'ตั้งเพดานสแกน 1 ใบ/วัน');
+  const cap1 = await req('POST', '/loyalty/earn', { token: capTok, body: { code: capCodes[0].code } });
+  ok(is2xx(cap1.status), 'ใบแรกสแกนได้ตามปกติ');
+  const cap2 = await req('POST', '/loyalty/earn', { token: capTok, body: { code: capCodes[1].code } });
+  ok(cap2.status === 429 && cap2.body?.code === 'RATE_LIMITED', '⭐ เกินเพดานต่อวัน → 429 ไม่ใช่ให้แต้ม', `ได้ ${cap2.status}`);
+  const capAfter = await req('GET', `/admin/loyalty/batches/${capBatch.body.id}/codes?brandId=${brandId}`, { token: adminToken });
+  ok(capAfter.body.codes.filter((c) => c.status === 'used').length === 1, 'โค้ดใบที่ถูกกั้นไม่ถูกเผา (ยังใช้ได้วันหลัง)');
+  await req('PATCH', `/admin/loyalty/settings?brandId=${brandId}`, { token: adminToken, body: { dailyEarnCap: 0 } });
+
+  // ปรับแต้มมือ (owner) — ต้องลง ledger และห้ามหักจนติดลบ
+  const adjUp = await req('POST', `/admin/loyalty/customers/${capCustId}/adjust?brandId=${brandId}`, {
+    token: adminToken, body: { points: 50, note: 'ชดเชย e2e' },
+  });
+  ok(is2xx(adjUp.status) && adjUp.body?.balance === 51, 'owner ปรับแต้มเพิ่มได้ (1+50)', JSON.stringify(adjUp.body));
+  const adjNoReason = await req('POST', `/admin/loyalty/customers/${capCustId}/adjust?brandId=${brandId}`, {
+    token: adminToken, body: { points: 10, note: '' },
+  });
+  ok(adjNoReason.status === 400, 'ปรับแต้มโดยไม่ระบุเหตุผล → 400', `ได้ ${adjNoReason.status}`);
+  const adjTooMuch = await req('POST', `/admin/loyalty/customers/${capCustId}/adjust?brandId=${brandId}`, {
+    token: adminToken, body: { points: -999999, note: 'หักเกิน' },
+  });
+  ok(adjTooMuch.status === 422, '⭐ หักแต้มเกินยอด → 422 ไม่ปล่อยให้ติดลบ', `ได้ ${adjTooMuch.status}`);
+  const adjStaff = await req('POST', `/admin/loyalty/customers/${capCustId}/adjust?brandId=${brandId}`, {
+    token: custToken, body: { points: 10, note: 'x' },
+  });
+  ok(adjStaff.status === 401 || adjStaff.status === 403, 'customer JWT ปรับแต้ม → 401/403', `ได้ ${adjStaff.status}`);
+  const custDetail = await req('GET', `/admin/customers/${capCustId}?brandId=${brandId}`, { token: adminToken });
+  ok(custDetail.body?.pointsBalance === 51 && Array.isArray(custDetail.body?.loyaltyLedger),
+    'หน้าลูกค้า (admin) มียอดแต้ม + ประวัติแต้ม', JSON.stringify(custDetail.body?.pointsBalance));
+
+  // รายงาน
+  const rep = await req('GET', `/admin/loyalty/report?brandId=${brandId}&days=30`, { token: adminToken });
+  ok(is2xx(rep.status) && rep.body?.totals?.earned > 0, 'รายงานแต้ม: แต้มที่แจกไป > 0', JSON.stringify(rep.body?.totals));
+  ok(Array.isArray(rep.body?.daily) && Array.isArray(rep.body?.batches), 'รายงานมีสรุปรายวัน + ต่อล็อต');
+  ok(typeof rep.body?.totals?.outstandingPoints === 'number', 'รายงานบอกแต้มค้างในระบบ (ภาระที่ต้องจ่ายคืน)');
+  const repCust = await req('GET', `/admin/loyalty/report?brandId=${brandId}`, { token: custToken });
+  ok(repCust.status === 401 || repCust.status === 403, 'customer JWT เข้ารายงานแต้มไม่ได้', `ได้ ${repCust.status}`);
+
   // การ์ดแต้มโผล่ในโปรไฟล์แล้ว (US-59 ผูกกับค่านี้)
   const profLoyalty = await req('GET', '/me/profile', { token: loyToken });
   ok(profLoyalty.body?.loyalty?.balance === 0, '/me/profile คืน loyalty แล้ว (แท็บแต้มใน LIFF ติดขึ้นมา)', JSON.stringify(profLoyalty.body?.loyalty));

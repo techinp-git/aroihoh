@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -22,6 +24,16 @@ import {
   normalizeCode,
   redemptionExpiry,
 } from './ledger';
+import {
+  ANOMALY_SCANS,
+  ANOMALY_WINDOW_MS,
+  bangkokDayStart,
+  detectAnomalies,
+  isThrottled,
+  pruneAttempts,
+  resolveDailyCap,
+  summarizeDaily,
+} from './guard';
 
 export interface CustomerScope {
   customerId: string;
@@ -31,9 +43,26 @@ export interface CustomerScope {
 /** สร้าง batch ทีเดียวได้ไม่เกินนี้ — กัน transaction ยาวจนล็อกตารางนาน */
 const MAX_BATCH_QUANTITY = 2000;
 
+function tooManyRequests(message: string, extra: Record<string, unknown> = {}): HttpException {
+  return new HttpException({ code: 'RATE_LIMITED', message, ...extra }, HttpStatus.TOO_MANY_REQUESTS);
+}
+
 @Injectable()
 export class LoyaltyService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * US-55: นับครั้งที่สแกนพลาดต่อลูกค้า เก็บในหน่วยความจำ (หายตอนรีสตาร์ท = ยอมรับได้)
+   * เป้าหมายคือกันสคริปต์ไล่เดารหัส ไม่ใช่ audit — ไม่คุ้มที่จะเขียน DB ทุกครั้งที่พิมพ์ผิด
+   */
+  private readonly failedEarns = new Map<string, number[]>();
+
+  private recordFailedEarn(customerId: string) {
+    const now = Date.now();
+    const list = pruneAttempts(this.failedEarns.get(customerId) ?? [], now);
+    list.push(now);
+    this.failedEarns.set(customerId, list);
+  }
 
   // ───────── ลูกค้า ─────────
 
@@ -47,7 +76,33 @@ export class LoyaltyService {
     const code = normalizeCode(rawCode ?? '');
     if (!code) throw new BadRequestException('ไม่พบรหัส QR');
 
-    return this.prisma.$transaction(async (tx) => {
+    // US-55 ชั้นที่ 2: พิมพ์/ยิงรหัสผิดรัว = กันไว้ก่อนแตะ DB
+    if (isThrottled(this.failedEarns.get(scope.customerId) ?? [], Date.now())) {
+      throw tooManyRequests('ลองสแกนผิดหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่');
+    }
+
+    // US-55 ชั้นที่ 1: เพดานสแกนต่อวัน (นับตามวันของไทย ไม่ใช่ UTC)
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: scope.brandId },
+      select: { loyaltyDailyEarnCap: true },
+    });
+    const cap = resolveDailyCap(brand?.loyaltyDailyEarnCap);
+    const usedToday = await this.prisma.loyaltyQrCode.count({
+      where: {
+        brandId: scope.brandId,
+        usedByCustomerId: scope.customerId,
+        usedAt: { gte: bangkokDayStart(new Date()) },
+      },
+    });
+    if (usedToday >= cap) {
+      throw tooManyRequests(`วันนี้สแกนครบ ${cap} ใบแล้ว พรุ่งนี้สแกนต่อได้`, {
+        cap,
+        usedToday,
+      });
+    }
+
+    return this.prisma
+      .$transaction(async (tx) => {
       const row = await tx.loyaltyQrCode.findUnique({
         where: { code },
         include: { batch: { select: { status: true, expiresAt: true } } },
@@ -99,7 +154,12 @@ export class LoyaltyService {
       });
 
       return { earned: row.points, balance: customer.pointsBalance };
-    });
+      })
+      .catch((e) => {
+        // นับเฉพาะ "รหัสใช้ไม่ได้" (404) เป็นการเดา — ใช้ซ้ำ/แต้มเต็มไม่ใช่การเดารหัส
+        if (e instanceof NotFoundException) this.recordFailedEarn(scope.customerId);
+        throw e;
+      });
   }
 
   /** แต้มคงเหลือ + ประวัติ + คูปองที่ยังค้างอยู่ */
@@ -410,6 +470,152 @@ export class LoyaltyService {
       where: { brandId },
       orderBy: [{ sortOrder: 'asc' }, { pointsCost: 'asc' }],
     });
+  }
+
+  /**
+   * US-55: แอดมินปรับแต้มด้วยมือ (ชดเชยลูกค้า / แก้ที่สแกนพลาด)
+   * ลง ledger เป็น type=adjust เสมอ → ยอดยังตรวจย้อนได้ และ audit log บอกว่าใครปรับ
+   */
+  async adjustPoints(
+    admin: AdminJwt,
+    brandId: string,
+    customerId: string,
+    points: number,
+    note: string,
+  ) {
+    assertBrandAccess(admin, brandId);
+    if (!Number.isInteger(points) || points === 0) {
+      throw new BadRequestException('จำนวนแต้มต้องเป็นจำนวนเต็มที่ไม่ใช่ 0');
+    }
+    if (!note?.trim()) throw new BadRequestException('ต้องระบุเหตุผลที่ปรับแต้ม');
+
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, brandId },
+        select: { pointsBalance: true },
+      });
+      if (!customer) throw new NotFoundException('ไม่พบลูกค้า');
+
+      // หักแต้มต้องไม่ทำให้ติดลบ — ใช้เงื่อนไขเดียวกับตอนแลกรางวัล
+      const updated = await tx.customer.updateMany({
+        where: {
+          id: customerId,
+          brandId,
+          ...(points < 0 ? { pointsBalance: { gte: -points } } : {}),
+        },
+        data: { pointsBalance: { increment: points } },
+      });
+      if (updated.count === 0) {
+        throw new UnprocessableEntityException({
+          code: 'NOT_ENOUGH_POINTS',
+          message: `หักไม่ได้ ลูกค้ามี ${customer.pointsBalance} แต้ม`,
+        });
+      }
+
+      await tx.loyaltyTransaction.create({
+        data: {
+          brandId,
+          customerId,
+          type: 'adjust',
+          points,
+          note: note.trim(),
+          ...ledgerRef('admin', admin.sub),
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          brandId,
+          actorType: 'admin',
+          actorId: admin.sub,
+          action: 'loyalty.adjust',
+          entityType: 'customer',
+          entityId: customerId,
+          before: { pointsBalance: customer.pointsBalance },
+          after: { pointsBalance: customer.pointsBalance + points, points, note: note.trim() },
+        },
+      });
+      return { balance: customer.pointsBalance + points, points };
+    });
+  }
+
+  /** US-55: ตั้งเพดานสแกนต่อวันของแบรนด์ (null = กลับไปใช้ค่าเริ่มต้นในโค้ด) */
+  async setDailyCap(admin: AdminJwt, brandId: string, cap: number | null) {
+    assertBrandAccess(admin, brandId);
+    await this.prisma.brand.update({
+      where: { id: brandId },
+      data: { loyaltyDailyEarnCap: cap && cap > 0 ? cap : null },
+    });
+    return { dailyEarnCap: resolveDailyCap(cap) };
+  }
+
+  /** US-55: รายงานแต้ม — เข้า/ออกรายวัน · ต่อล็อต · ลูกค้าที่สแกนรัวผิดปกติ */
+  async report(admin: AdminJwt, brandId: string, days = 14) {
+    assertBrandAccess(admin, brandId);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const [ledger, scans, batches, outstanding, brand] = await Promise.all([
+      this.prisma.loyaltyTransaction.findMany({
+        where: { brandId, createdAt: { gte: since } },
+        select: { type: true, points: true, createdAt: true },
+      }),
+      this.prisma.loyaltyQrCode.findMany({
+        where: { brandId, status: 'used', usedAt: { gte: since } },
+        select: { usedByCustomerId: true, usedAt: true },
+      }),
+      this.listBatches(admin, brandId),
+      this.prisma.customer.aggregate({
+        where: { brandId },
+        _sum: { pointsBalance: true },
+        _count: { _all: true },
+      }),
+      this.prisma.brand.findUnique({
+        where: { id: brandId },
+        select: { loyaltyDailyEarnCap: true },
+      }),
+    ]);
+
+    const daily = summarizeDaily(ledger);
+    const anomalies = detectAnomalies(
+      scans
+        .filter((s) => s.usedByCustomerId && s.usedAt)
+        .map((s) => ({ customerId: s.usedByCustomerId!, at: s.usedAt! })),
+    );
+    // ติดชื่อลูกค้าให้แถวที่ต้องไปตามดู (ไม่คืน PII อื่น)
+    const names = anomalies.length
+      ? await this.prisma.customer.findMany({
+          where: { id: { in: anomalies.map((a) => a.customerId) }, brandId },
+          select: { id: true, displayName: true },
+        })
+      : [];
+    const nameById = new Map(names.map((n) => [n.id, n.displayName]));
+
+    return {
+      days,
+      dailyEarnCap: resolveDailyCap(brand?.loyaltyDailyEarnCap),
+      totals: {
+        earned: daily.reduce((a, d) => a + d.earned, 0),
+        redeemed: daily.reduce((a, d) => a + d.redeemed, 0),
+        scans: scans.length,
+        // แต้มค้างในระบบ = ภาระที่ร้านต้องจ่ายคืนเป็นของรางวัลในอนาคต
+        outstandingPoints: outstanding._sum.pointsBalance ?? 0,
+        customers: outstanding._count._all,
+      },
+      daily,
+      batches: batches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        status: b.status,
+        points: b.points,
+        codeCount: b.codeCount,
+        usedCount: b.usedCount,
+      })),
+      anomalies: anomalies.map((a) => ({
+        ...a,
+        displayName: nameById.get(a.customerId) ?? null,
+        threshold: ANOMALY_SCANS,
+        windowMinutes: Math.round(ANOMALY_WINDOW_MS / 60000),
+      })),
+    };
   }
 
   /** คนขายสแกนแล้วเห็นก่อนกดยืนยัน — ยังไม่แตะแต้ม */

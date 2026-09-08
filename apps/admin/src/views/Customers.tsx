@@ -9,6 +9,7 @@ import {
   type CustomerRow,
   type CustomerDetail,
   type TagCount,
+  adjustCustomerPoints,
 } from '../api';
 import { TagEditor } from '../components/Tags';
 import { Avatar, nameHue } from '../components/Avatar';
@@ -39,7 +40,11 @@ function TagPill({ tag }: { tag: string }) {
   );
 }
 
-export default function Customers({ brandId }: { brandId: string }) {
+const LOYALTY_TX_TH: Record<string, string> = {
+  earn: 'สแกนรับแต้ม', redeem: 'แลกรางวัล', adjust: 'ร้านปรับแต้ม', expire: 'แต้มหมดอายุ',
+};
+
+export default function Customers({ brandId, canAdjust = false }: { brandId: string; canAdjust?: boolean }) {
   const [rows, setRows] = useState<CustomerRow[]>([]);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
@@ -122,6 +127,48 @@ export default function Customers({ brandId }: { brandId: string }) {
             <div className="stat"><div className="stat-label">ยอดใช้จ่ายรวม</div><div className="stat-value accent">{baht(detail.totalSpent)}</div></div>
             <div className="stat"><div className="stat-label">สั่งล่าสุด</div><div className="stat-value" style={{ fontSize: 18 }}>{fmtDate(detail.lastOrderAt)}</div></div>
           </div>
+        </div>
+
+        {/* US-55: การ์ดแต้มสะสม — ยอดคงเหลือ + ประวัติล่าสุด + ปรับแต้มมือ (owner) */}
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="line" style={{ padding: 0 }}>
+            <div className="stat-label">แต้มสะสม</div>
+            <div className="stat-value accent" style={{ fontSize: 24 }}>{detail.pointsBalance ?? 0}</div>
+          </div>
+          {(detail.loyaltyLedger || []).length === 0 && (
+            <div className="page-sub" style={{ marginTop: 6 }}>ยังไม่มีรายการแต้ม</div>
+          )}
+          {(detail.loyaltyLedger || []).map((l) => (
+            <div key={l.id} className="line" style={{ fontSize: 13 }}>
+              <span>
+                {LOYALTY_TX_TH[l.type]}{l.note ? ` · ${l.note}` : ''}
+                <span style={{ color: '#6b7280' }}> · {new Date(l.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
+              </span>
+              <b style={{ color: l.points < 0 ? '#b91c1c' : '#15803d' }}>{l.points > 0 ? `+${l.points}` : l.points}</b>
+            </div>
+          ))}
+          {canAdjust && (
+            <button
+              className="btn ghost"
+              style={{ marginTop: 10 }}
+              onClick={async () => {
+                const raw = prompt('ปรับแต้มเท่าไร? (ใส่ลบเพื่อหัก เช่น -20)');
+                if (!raw) return;
+                const points = parseInt(raw, 10);
+                if (!points) return;
+                const note = prompt('เหตุผล (บันทึกลงประวัติและ audit log)');
+                if (!note?.trim()) return;
+                try {
+                  await adjustCustomerPoints(brandId, detail.id, points, note.trim());
+                  open(detail.id); // โหลดรายละเอียดใหม่ให้ยอด/ประวัติตรง
+                } catch (e) {
+                  alert((e as Error).message);
+                }
+              }}
+            >
+              ปรับแต้มด้วยมือ
+            </button>
+          )}
         </div>
 
         {/* US-58/60: แยกสมุดที่อยู่ของลูกค้า ออกจากที่อยู่ที่ติดมากับแต่ละออเดอร์

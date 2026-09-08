@@ -1,6 +1,13 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
-import { BatchStatusDto, CreateBatchDto, CreateRewardDto, UpdateRewardDto } from './dto/loyalty.dto';
+import {
+  AdjustPointsDto,
+  BatchStatusDto,
+  CreateBatchDto,
+  CreateRewardDto,
+  DailyCapDto,
+  UpdateRewardDto,
+} from './dto/loyalty.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -71,6 +78,40 @@ export class AdminLoyaltyController {
   @Roles('owner', 'manager')
   listRewards(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
     return this.loyalty.listAdminRewards(admin, brandId);
+  }
+
+  // US-55 รายงาน + กันโกง
+  @Get('report')
+  @Roles('owner', 'manager')
+  report(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Query('days') days?: string,
+  ) {
+    const n = Math.min(90, Math.max(1, parseInt(days || '14', 10) || 14));
+    return this.loyalty.report(admin, brandId, n);
+  }
+
+  /** ปรับแต้มด้วยมือ — เจ้าของร้านเท่านั้น (แก้ยอดเงินในมือลูกค้าโดยตรง) */
+  @Post('customers/:id/adjust')
+  @Roles('owner')
+  adjust(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Param('id') id: string,
+    @Body() dto: AdjustPointsDto,
+  ) {
+    return this.loyalty.adjustPoints(admin, brandId, id, dto.points, dto.note);
+  }
+
+  @Patch('settings')
+  @Roles('owner')
+  setDailyCap(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Body() dto: DailyCapDto,
+  ) {
+    return this.loyalty.setDailyCap(admin, brandId, dto.dailyEarnCap ?? null);
   }
 
   // คนขายสแกนคูปอง — brandId มาจากตัวคูปอง ไม่รับจาก client (กันข้ามแบรนด์)

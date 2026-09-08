@@ -47,6 +47,12 @@ export class CustomersService {
             isSaved: true,
           },
         },
+        // US-55: การ์ดแต้มในหน้าลูกค้า — ยอดคงเหลือ + ประวัติล่าสุด
+        loyaltyLedger: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: { id: true, type: true, points: true, note: true, createdAt: true },
+        },
         orders: {
           orderBy: { createdAt: 'desc' },
           take: 20,
@@ -64,6 +70,8 @@ export class CustomersService {
       marketingOptedOut: c.marketingOptedOut,
       createdAt: c.createdAt,
       addresses: c.addresses,
+      pointsBalance: c.pointsBalance,
+      loyaltyLedger: c.loyaltyLedger,
       orders: c.orders,
       ...computeCustomerStats(c.orders),
     };

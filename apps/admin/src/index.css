@@ -247,3 +247,5 @@ table.data tbody tr:hover { background: var(--surface-2); }
 /* US-51: ปุ่มหลายตัวในเซลล์ตาราง — .btn เป็น width:100% ต้องล้ม */
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .row-actions .btn { width: auto; padding: 6px 10px; font-size: 12px; }
+.report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.report-head .btn { width: auto; padding: 7px 14px; font-size: 13px; }

@@ -227,7 +227,7 @@ export default function App() {
           {view === 'menu' && <Menu brandId={brandId} />}
           {view === 'chat' && <Chat />} {/* US-40: inbox เดียวรวมทุกแบรนด์ */}
           {view === 'broadcast' && <Broadcast brandId={brandId} />}
-          {view === 'customers' && <Customers brandId={brandId} />}
+          {view === 'customers' && <Customers brandId={brandId} canAdjust={profile.role === 'owner'} />}
           {view === 'loyalty' && (
             <Loyalty brandId={brandId} canManage={profile.role === 'owner' || profile.role === 'manager'} />
           )}

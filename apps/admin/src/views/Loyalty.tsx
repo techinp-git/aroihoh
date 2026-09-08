@@ -4,13 +4,16 @@ import {
   createLoyaltyBatch,
   listLoyaltyBatches,
   listLoyaltyCodes,
+  getLoyaltyReport,
   setLoyaltyBatchStatus,
+  setLoyaltyDailyCap,
   createLoyaltyReward,
   listLoyaltyRewards,
   previewRedemption,
   updateLoyaltyReward,
   baht,
   type LoyaltyBatch,
+  type LoyaltyReport,
   type LoyaltyReward,
   type RedemptionPreview,
 } from '../api';
@@ -27,7 +30,7 @@ import { printHtml, qrStickerSheetHtml, type StickerLabel } from '../lib/print';
  * ไม่ควรถ่วงทุกหน้าของแอดมินทั้งที่ใช้แค่หน้านี้
  */
 
-type Tab = 'scan' | 'rewards' | 'batches';
+type Tab = 'scan' | 'rewards' | 'batches' | 'report';
 
 const BATCH_STATUS_TH: Record<string, string> = { draft: 'ยังไม่เปิดใช้', active: 'เปิดใช้แล้ว', revoked: 'ยกเลิกแล้ว' };
 
@@ -47,12 +50,16 @@ export default function Loyalty({ brandId, canManage }: { brandId: string; canMa
             <button className={'tab' + (tab === 'rewards' ? ' active' : '')} onClick={() => setTab('rewards')}>
               🎁 ของรางวัล
             </button>
+            <button className={'tab' + (tab === 'report' ? ' active' : '')} onClick={() => setTab('report')}>
+              📊 รายงาน
+            </button>
           </>
         )}
       </div>
       {tab === 'scan' && <ScanTab />}
       {tab === 'batches' && <BatchesTab brandId={brandId} />}
       {tab === 'rewards' && <RewardsTab brandId={brandId} />}
+      {tab === 'report' && <ReportTab brandId={brandId} />}
     </>
   );
 }
@@ -501,6 +508,131 @@ function BatchesTab({ brandId }: { brandId: string }) {
             </tbody>
           </table>
         </div>
+      </div>
+    </>
+  );
+}
+
+// ───────── รายงาน + กันโกง (US-55) ─────────
+
+function ReportTab({ brandId }: { brandId: string }) {
+  const [data, setData] = useState<LoyaltyReport | null>(null);
+  const [days, setDays] = useState(14);
+  const [err, setErr] = useState('');
+  const [cap, setCap] = useState('');
+  const [capMsg, setCapMsg] = useState('');
+
+  const load = () => {
+    if (!brandId) return;
+    getLoyaltyReport(brandId, days)
+      .then((d) => { setData(d); setCap(String(d.dailyEarnCap)); })
+      .catch((e) => setErr((e as Error).message));
+  };
+  useEffect(load, [brandId, days]);
+
+  const saveCap = async () => {
+    setCapMsg('');
+    try {
+      const r = await setLoyaltyDailyCap(brandId, parseInt(cap, 10) || 0);
+      setCap(String(r.dailyEarnCap));
+      setCapMsg(`บันทึกแล้ว — ลูกค้า 1 คนสแกนได้ ${r.dailyEarnCap} ใบ/วัน`);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+
+  if (err) return <div className="alert error">{err}</div>;
+  if (!data) return <div className="card" style={{ padding: 16 }}>กำลังโหลด…</div>;
+
+  return (
+    <>
+      {/* หน้านี้เปิดค้างไว้เฝ้าดูความผิดปกติ → ต้องมีปุ่มโหลดใหม่ ไม่ใช่ต้องรีเฟรชทั้งแอป */}
+      <div className="report-head">
+        <div className="tabs">
+          {[7, 14, 30].map((d) => (
+            <button key={d} className={'tab' + (days === d ? ' active' : '')} onClick={() => setDays(d)}>
+              {d} วัน
+            </button>
+          ))}
+        </div>
+        <button className="btn ghost" onClick={load}>↻ โหลดใหม่</button>
+      </div>
+
+      <div className="stats" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+        <div className="stat"><div className="stat-label">แต้มที่แจกไป</div><div className="stat-value">{data.totals.earned.toLocaleString('th-TH')}</div></div>
+        <div className="stat"><div className="stat-label">แต้มที่ถูกแลก</div><div className="stat-value">{data.totals.redeemed.toLocaleString('th-TH')}</div></div>
+        <div className="stat"><div className="stat-label">สแกนทั้งหมด</div><div className="stat-value">{data.totals.scans.toLocaleString('th-TH')} ใบ</div></div>
+        <div className="stat">
+          <div className="stat-label">แต้มค้างในระบบ</div>
+          <div className="stat-value accent">{data.totals.outstandingPoints.toLocaleString('th-TH')}</div>
+        </div>
+      </div>
+      <div className="page-sub" style={{ marginBottom: 16 }}>
+        "แต้มค้าง" คือแต้มที่ลูกค้าถืออยู่และยังไม่ได้แลก — เป็นของรางวัลที่ร้านต้องเตรียมจ่ายในอนาคต
+      </div>
+
+      {data.anomalies.length > 0 && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="stat-label" style={{ marginBottom: 8 }}>⚠️ สแกนรัวผิดปกติ</div>
+          <div className="page-sub" style={{ marginBottom: 10 }}>
+            ลูกค้าที่สแกนเกิน {data.anomalies[0].threshold} ใบภายใน {data.anomalies[0].windowMinutes} นาที —
+            อาจเป็นคนเก็บสติกเกอร์ที่ยังไม่แจกมาสแกนเอง ลองเทียบกับยอดขายช่วงนั้น
+          </div>
+          {data.anomalies.map((a) => (
+            <div key={a.customerId} className="line">
+              <span>{a.displayName || a.customerId.slice(0, 8)}</span>
+              <b>{a.scans} ใบ ใน {a.windowMinutes} นาที</b>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>วันที่</th><th>แต้มที่แจก</th><th>แต้มที่แลก</th></tr></thead>
+            <tbody>
+              {data.daily.length === 0 && <tr><td colSpan={3} style={{ color: '#6b7280' }}>ยังไม่มีรายการในช่วงนี้</td></tr>}
+              {data.daily.map((d) => (
+                <tr key={d.date}>
+                  <td className="time">{new Date(d.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</td>
+                  <td className="total">+{d.earned}</td>
+                  <td className="total">{d.redeemed ? `-${d.redeemed}` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>ล็อต</th><th>แต้ม/ใบ</th><th>ใช้แล้ว</th><th>สถานะ</th></tr></thead>
+            <tbody>
+              {data.batches.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.name}</td>
+                  <td className="total">{b.points}</td>
+                  <td className="total">{b.usedCount} / {b.codeCount}</td>
+                  <td><span className={`pill ${b.status === 'active' ? 'completed' : b.status === 'revoked' ? 'cancelled' : 'pending'}`}>{BATCH_STATUS_TH[b.status]}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 16 }}>
+        <div className="stat-label" style={{ marginBottom: 8 }}>เพดานสแกนต่อวัน (ต่อลูกค้า 1 คน)</div>
+        <div className="page-sub" style={{ marginBottom: 10 }}>
+          กันคนเก็บสติกเกอร์ที่ยังไม่แจกมาสแกนรวดเดียว · ใส่ 0 = กลับไปใช้ค่าเริ่มต้นของระบบ
+        </div>
+        <div className="scan-manual">
+          <input value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ''))} style={{ maxWidth: 120 }} />
+          <button className="btn primary" onClick={saveCap}>บันทึก</button>
+        </div>
+        {capMsg && <div className="alert info" style={{ marginTop: 10 }}>{capMsg}</div>}
       </div>
     </>
   );
