@@ -412,6 +412,137 @@ async function main() {
   const clearPhone = await req('PATCH', '/me/profile', { token: addrToken, body: { phone: '' } });
   ok(clearPhone.body?.hasPhone === false, 'ลบเบอร์ทิ้งได้');
 
+  // 11c) US-50: แกนสะสมแต้ม (EP-14) — สแกน QR ได้แต้ม → แลกรางวัล → คนขายยืนยัน
+  const loyCust = await req('POST', '/auth/dev-login', {
+    body: { brandId, name: 'e2e-loy-' + uuid() },
+  });
+  const loyToken = loyCust.body?.accessToken;
+
+  const me0 = await req('GET', '/loyalty/me', { token: loyToken });
+  ok(is2xx(me0.status) && me0.body?.balance === 0, 'ลูกค้าใหม่ แต้ม = 0', JSON.stringify(me0.body));
+
+  // สร้างล็อต QR (เริ่มที่ draft เสมอ)
+  const batch = await req('POST', '/admin/loyalty/batches', {
+    token: adminToken,
+    body: { brandId, name: 'E2E ล็อตทดสอบ', points: 10, quantity: 3 },
+  });
+  ok(is2xx(batch.status) && batch.body?.codesCreated === 3, 'สร้างล็อต QR + ออกโค้ด 3 ใบ', JSON.stringify(batch.body));
+  ok(batch.body?.status === 'draft', 'ล็อตใหม่เริ่มที่ draft (กันสแกนตั้งแต่โรงพิมพ์)');
+  const batchId = batch.body?.id;
+
+  const codesRes = await req('GET', `/admin/loyalty/batches/${batchId}/codes?brandId=${brandId}`, { token: adminToken });
+  const codes = codesRes.body?.codes || [];
+  ok(codes.length === 3 && codes[0]?.code?.length === 16, 'ดึงโค้ดทั้งล็อตได้ (ยาว 16 ตัว)');
+  ok(new Set(codes.map((c) => c.code)).size === 3, 'โค้ดในล็อตไม่ซ้ำกัน');
+
+  // ล็อตยัง draft → สแกนแล้วต้องยังไม่ได้แต้ม
+  const earnDraft = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes[0].code } });
+  ok(earnDraft.status === 404, 'ล็อต draft → สแกนไม่ได้แต้ม (404)', `ได้ ${earnDraft.status}`);
+
+  const activate = await req('PATCH', `/admin/loyalty/batches/${batchId}?brandId=${brandId}`, {
+    token: adminToken, body: { status: 'active' },
+  });
+  ok(is2xx(activate.status), 'เปิดใช้ล็อต');
+
+  // สแกนได้แต้มจริง
+  const earn1 = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes[0].code } });
+  ok(is2xx(earn1.status) && earn1.body?.earned === 10 && earn1.body?.balance === 10, 'สแกน QR → ได้ 10 แต้ม', JSON.stringify(earn1.body));
+
+  // ⭐ ใช้ซ้ำไม่ได้
+  const earnAgain = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes[0].code } });
+  ok(earnAgain.status === 409, 'สแกนโค้ดเดิมซ้ำ → 409', `ได้ ${earnAgain.status}`);
+
+  // คนอื่นก็ใช้โค้ดที่ถูกใช้แล้วไม่ได้
+  const earnStolen = await req('POST', '/loyalty/earn', { token: custToken, body: { code: codes[0].code } });
+  ok(earnStolen.status === 409, 'ลูกค้าอื่นสแกนโค้ดที่ใช้แล้ว → 409', `ได้ ${earnStolen.status}`);
+
+  // พิมพ์รหัสเองแบบมีขีด/ตัวเล็ก ก็ต้องใช้ได้ (เส้นสำรองเมื่อกล้องสแกนไม่ติด)
+  const human = codes[1].human.toLowerCase();
+  const earnHuman = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: human } });
+  ok(is2xx(earnHuman.status) && earnHuman.body?.balance === 20, 'พิมพ์รหัสเอง (มีขีด/ตัวเล็ก) ใช้ได้', JSON.stringify(earnHuman.body));
+
+  // รหัสมั่ว → 404 (ไม่บอกว่ามี/ไม่มีในระบบ)
+  const earnBogus = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: 'ZZZZZZZZZZZZZZZZ' } });
+  ok(earnBogus.status === 404, 'รหัสมั่ว → 404', `ได้ ${earnBogus.status}`);
+
+  // ⭐ ข้ามแบรนด์: โค้ดของแบรนด์นี้ ลูกค้าแบรนด์อื่นสแกนไม่ได้
+  const otherBrandCust = await req('POST', '/auth/dev-login', { body: { brandId: newBrandId, name: 'e2e-loy-x-' + uuid() } });
+  const crossEarn = await req('POST', '/loyalty/earn', {
+    token: otherBrandCust.body?.accessToken, body: { code: codes[2].code },
+  });
+  ok(crossEarn.status === 404, 'สแกนโค้ดข้ามแบรนด์ → 404 (tenant isolation)', `ได้ ${crossEarn.status}`);
+
+  // ledger ตรงกับยอดแต้ม
+  const me1 = await req('GET', '/loyalty/me', { token: loyToken });
+  const ledgerSum = (me1.body?.history || []).reduce((a, h) => a + h.points, 0);
+  ok(me1.body?.balance === 20 && ledgerSum === 20, 'ยอดแต้ม = ผลรวม ledger', `balance=${me1.body?.balance} ledger=${ledgerSum}`);
+
+  // รางวัล
+  const rw = await req('POST', '/admin/loyalty/rewards', {
+    token: adminToken, body: { brandId, name: 'E2E ข้าวฟรี', pointsCost: 20 },
+  });
+  ok(is2xx(rw.status) && rw.body?.id, 'สร้างรางวัล');
+  const rewardId = rw.body?.id;
+  const rwExpensive = await req('POST', '/admin/loyalty/rewards', {
+    token: adminToken, body: { brandId, name: 'E2E รางวัลแพง', pointsCost: 9999 },
+  });
+
+  const rwList = await req('GET', '/loyalty/rewards', { token: loyToken });
+  const affordable = (rwList.body?.rewards || []).find((r) => r.id === rewardId);
+  ok(affordable?.affordable === true, 'รางวัลที่แต้มพอ → affordable true');
+  ok((rwList.body?.rewards || []).find((r) => r.id === rwExpensive.body?.id)?.affordable === false, 'รางวัลที่แต้มไม่พอ → affordable false');
+
+  // แต้มไม่พอ → 422
+  const tooExpensive = await req('POST', '/loyalty/redemptions', { token: loyToken, body: { rewardId: rwExpensive.body?.id } });
+  ok(tooExpensive.status === 422, 'ขอคูปองทั้งที่แต้มไม่พอ → 422', `ได้ ${tooExpensive.status}`);
+
+  // ขอคูปอง — ยังไม่ตัดแต้ม
+  const red1 = await req('POST', '/loyalty/redemptions', { token: loyToken, body: { rewardId } });
+  ok(is2xx(red1.status) && red1.body?.token, 'ขอคูปองแลกแต้มได้', JSON.stringify(red1.body));
+  const meAfterCoupon = await req('GET', '/loyalty/me', { token: loyToken });
+  ok(meAfterCoupon.body?.balance === 20, '⭐ ออกคูปองแล้วยังไม่ตัดแต้ม (ตัดตอนคนขายยืนยัน)', `balance=${meAfterCoupon.body?.balance}`);
+
+  // ขอใบใหม่ → ใบเก่าถูกยกเลิก (มี pending ได้ทีละ 1)
+  const red2 = await req('POST', '/loyalty/redemptions', { token: loyToken, body: { rewardId } });
+  const old = await req('GET', `/loyalty/redemptions/${red1.body?.id}`, { token: loyToken });
+  ok(old.body?.status === 'cancelled', 'ขอคูปองใบใหม่ → ใบเก่าถูกยกเลิก (pending ได้ทีละ 1)', `ได้ ${old.body?.status}`);
+
+  // คูปองของคนอื่น
+  const peekCoupon = await req('GET', `/loyalty/redemptions/${red2.body?.id}`, { token: custToken });
+  ok(peekCoupon.status === 404, 'ลูกค้าอื่นดูคูปองเรา → 404', `ได้ ${peekCoupon.status}`);
+
+  // คนขายสแกน preview แล้วยืนยัน
+  const preview = await req('GET', `/admin/loyalty/redemptions/${red2.body?.token}`, { token: adminToken });
+  ok(is2xx(preview.status) && preview.body?.confirmable === true, 'คนขาย preview คูปอง → ยืนยันได้', JSON.stringify(preview.body));
+  ok(preview.body?.pointsCost === 20 && preview.body?.rewardName === 'E2E ข้าวฟรี', 'preview บอกรางวัล + แต้มที่จะตัด');
+
+  const confirm1 = await req('POST', `/admin/loyalty/redemptions/${red2.body?.token}/confirm`, { token: adminToken });
+  ok(is2xx(confirm1.status) && confirm1.body?.balance === 0, 'ยืนยันแลก → ตัดแต้ม เหลือ 0', JSON.stringify(confirm1.body));
+
+  // ⭐ ยืนยันซ้ำต้องไม่ตัดแต้มอีกรอบ
+  const confirm2 = await req('POST', `/admin/loyalty/redemptions/${red2.body?.token}/confirm`, { token: adminToken });
+  ok(confirm2.status === 409, 'ยืนยันคูปองซ้ำ → 409 ไม่ตัดแต้มซ้ำ', `ได้ ${confirm2.status}`);
+  const meFinal = await req('GET', '/loyalty/me', { token: loyToken });
+  ok(meFinal.body?.balance === 0, '⭐ ยอดแต้มไม่ติดลบหลังยืนยันซ้ำ', `balance=${meFinal.body?.balance}`);
+  const finalLedger = (meFinal.body?.history || []).reduce((a, h) => a + h.points, 0);
+  ok(finalLedger === 0, 'ledger ยังตรงกับยอดแต้มหลังแลก', `ledger=${finalLedger}`);
+
+  // แต้มหมดแล้วขอคูปองอีกไม่ได้
+  const afterSpent = await req('POST', '/loyalty/redemptions', { token: loyToken, body: { rewardId } });
+  ok(afterSpent.status === 422, 'แต้มหมดแล้วขอคูปองอีก → 422', `ได้ ${afterSpent.status}`);
+
+  // RBAC / tenant
+  const custBatch = await req('POST', '/admin/loyalty/batches', { token: custToken, body: { brandId, name: 'x', points: 1, quantity: 1 } });
+  ok(custBatch.status === 401 || custBatch.status === 403, 'customer JWT สร้างล็อต QR → 401/403', `ได้ ${custBatch.status}`);
+  const crossBatch = await req('POST', '/admin/loyalty/batches', {
+    token: adminToken, body: { brandId: 'not-a-brand', name: 'x', points: 1, quantity: 1 },
+  });
+  ok(crossBatch.status === 403 || crossBatch.status === 404, 'สร้างล็อตข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${crossBatch.status}`);
+
+  // การ์ดแต้มโผล่ในโปรไฟล์แล้ว (US-59 ผูกกับค่านี้)
+  const profLoyalty = await req('GET', '/me/profile', { token: loyToken });
+  ok(profLoyalty.body?.loyalty?.balance === 0, '/me/profile คืน loyalty แล้ว (แท็บแต้มใน LIFF ติดขึ้นมา)', JSON.stringify(profLoyalty.body?.loyalty));
+
   // 12) RBAC — customer JWT ห้ามเข้า admin endpoint
   const forbidden = await req('GET', `/admin/orders?brandId=${brandId}`, { token: custToken });
   ok(forbidden.status === 401 || forbidden.status === 403, 'customer JWT เข้า /admin → 401/403', `ได้ ${forbidden.status}`);

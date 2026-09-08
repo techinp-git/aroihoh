@@ -22,6 +22,7 @@ import { LineModule } from './modules/line/line.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MediaModule } from './modules/media/media.module';
 import { ProfileModule } from './modules/profile/profile.module';
+import { LoyaltyModule } from './modules/loyalty/loyalty.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ProfileModule } from './modules/profile/profile.module';
     PaymentsModule,
     CustomersModule,
     ProfileModule,
+    LoyaltyModule,
     ChatModule,
     StoreModule,
     BroadcastsModule,

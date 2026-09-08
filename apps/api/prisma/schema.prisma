@@ -72,6 +72,11 @@ model Brand {
   menuItems     MenuItem[]
   customers     Customer[]
   addresses     Address[]
+  loyaltyBatches      LoyaltyQrBatch[]
+  loyaltyCodes        LoyaltyQrCode[]
+  loyaltyRewards      LoyaltyReward[]
+  loyaltyRedemptions  LoyaltyRedemption[]
+  loyaltyLedger       LoyaltyTransaction[]
   orders        Order[]
   payments      Payment[]
   messageLogs   MessageLog[]
@@ -163,13 +168,18 @@ model Customer {
   phoneEnc    String? // เข้ารหัส — ห้าม log
   tags        String[] @default([]) // US-21: แท็กลูกค้า (VIP, ประจำ, ฯลฯ)
   marketingOptedOut Boolean @default(false) // PDPA: opt-out รับข่าวสาร/broadcast — ต้องเคารพเสมอ
+  /// US-50: cache ของ SUM(loyalty_transactions.points) — อัปเดตใน transaction เดียวกับ ledger เสมอ ห้ามติดลบ
+  pointsBalance     Int     @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brand        Brand         @relation(fields: [brandId], references: [id])
-  addresses    Address[]
-  orders       Order[]
-  chatMessages ChatMessage[]
+  brand           Brand                @relation(fields: [brandId], references: [id])
+  addresses       Address[]
+  orders          Order[]
+  chatMessages    ChatMessage[]
+  loyaltyCodes    LoyaltyQrCode[]
+  redemptions     LoyaltyRedemption[]
+  loyaltyLedger   LoyaltyTransaction[]
 
   @@unique([brandId, lineUserId])
   @@index([brandId])
@@ -533,4 +543,147 @@ model AuditLog {
 
   @@index([brandId, entityType, entityId])
   @@map("audit_logs")
+}
+
+// ── EP-14 Loyalty (US-50) ──
+// แหล่งความจริงของแต้ม = LoyaltyTransaction (append-only) · customers.pointsBalance เป็น cache
+// แต้มแยกต่อแบรนด์ (ADR-07) — ทุกตารางมี brandId
+
+enum LoyaltyBatchStatus {
+  draft // พิมพ์อยู่/ยังไม่ถึงร้าน — สแกนแล้วไม่ได้แต้ม (กันสแกนตั้งแต่โรงพิมพ์)
+  active
+  revoked
+}
+
+enum LoyaltyCodeStatus {
+  active
+  used
+  revoked
+}
+
+enum LoyaltyRewardType {
+  free_item
+  discount
+}
+
+enum LoyaltyRedemptionStatus {
+  pending // ออกคูปองแล้ว ยังไม่ตัดแต้ม
+  confirmed // คนขายยืนยัน = ตัดแต้มตรงนี้ที่เดียว
+  expired
+  cancelled
+}
+
+enum LoyaltyTxType {
+  earn
+  redeem
+  adjust // แอดมินแก้มือ (US-55)
+  expire // แต้มหมดอายุ (เฟส 2)
+}
+
+/// ล็อตสติกเกอร์ QR ที่สั่งพิมพ์ครั้งหนึ่ง
+model LoyaltyQrBatch {
+  id          String             @id @default(uuid())
+  brandId     String
+  name        String
+  menuItemId  String? // ผูกสินค้า (ไม่บังคับ — แต้มทั่วไปก็ได้)
+  points      Int
+  quantity    Int
+  status      LoyaltyBatchStatus @default(draft)
+  expiresAt   DateTime?
+  createdById String? // admin ที่สร้าง
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  brand Brand           @relation(fields: [brandId], references: [id])
+  codes LoyaltyQrCode[]
+
+  @@index([brandId, status])
+  @@map("loyalty_qr_batches")
+}
+
+/// QR 1 ใบ — ใช้ได้ครั้งเดียว (active → used ด้วย conditional update กันสแกนพร้อมกัน 2 คน)
+model LoyaltyQrCode {
+  id               String            @id @default(uuid())
+  brandId          String
+  batchId          String
+  code             String            @unique
+  points           Int // snapshot จาก batch — แก้ batch ทีหลังไม่กระทบใบที่พิมพ์แล้ว
+  status           LoyaltyCodeStatus @default(active)
+  usedByCustomerId String?
+  usedAt           DateTime?
+  createdAt        DateTime          @default(now())
+
+  brand    Brand          @relation(fields: [brandId], references: [id])
+  batch    LoyaltyQrBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  usedBy   Customer?      @relation(fields: [usedByCustomerId], references: [id])
+
+  @@index([batchId, status])
+  @@index([brandId, usedByCustomerId])
+  @@map("loyalty_qr_codes")
+}
+
+model LoyaltyReward {
+  id             String            @id @default(uuid())
+  brandId        String
+  name           String
+  description    String?
+  pointsCost     Int
+  type           LoyaltyRewardType @default(free_item)
+  menuItemId     String? // free_item
+  discountAmount Int? // discount (สตางค์)
+  isActive       Boolean           @default(true)
+  sortOrder      Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  brand       Brand               @relation(fields: [brandId], references: [id])
+  redemptions LoyaltyRedemption[]
+
+  @@index([brandId, isActive])
+  @@map("loyalty_rewards")
+}
+
+/// คูปองแลกแต้ม — ตัดแต้มตอน confirmed เท่านั้น จึงไม่ต้องมี job คืนแต้มเมื่อหมดอายุ
+model LoyaltyRedemption {
+  id                 String                  @id @default(uuid())
+  brandId            String
+  customerId         String
+  rewardId           String
+  rewardName         String // snapshot
+  pointsCost         Int // snapshot
+  token              String                  @unique // เนื้อหาใน QR คูปอง
+  status             LoyaltyRedemptionStatus @default(pending)
+  expiresAt          DateTime
+  confirmedByAdminId String?
+  confirmedAt        DateTime?
+  orderId            String? // เฟส 2 (US-57): ใช้เป็นส่วนลดออเดอร์
+  createdAt          DateTime                @default(now())
+
+  brand    Brand         @relation(fields: [brandId], references: [id])
+  customer Customer      @relation(fields: [customerId], references: [id])
+  reward   LoyaltyReward @relation(fields: [rewardId], references: [id])
+
+  @@index([brandId, status])
+  @@index([customerId, status])
+  @@map("loyalty_redemptions")
+}
+
+/// ledger append-only — ห้าม update/delete
+model LoyaltyTransaction {
+  id         String        @id @default(uuid())
+  brandId    String
+  customerId String
+  type       LoyaltyTxType
+  points     Int // มีเครื่องหมาย: +earn / -redeem
+  refType    String? // 'qr_code' | 'redemption' | 'order' | 'admin'
+  refId      String?
+  note       String?
+  createdAt  DateTime      @default(now())
+
+  brand    Brand    @relation(fields: [brandId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@index([brandId, createdAt])
+  @@map("loyalty_transactions")
 }

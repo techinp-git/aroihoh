@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryService } from '../delivery/delivery.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { encryptSecret, decryptSecret } from '../../common/crypto';
 import {
   MAX_SAVED_ADDRESSES,
@@ -30,6 +31,7 @@ export class ProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly delivery: DeliveryService,
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   private readonly addressSelect = {
@@ -98,12 +100,13 @@ export class ProfileService {
         pictureUrl: true,
         phoneEnc: true,
         marketingOptedOut: true,
+        pointsBalance: true,
         createdAt: true,
       },
     });
     if (!customer) throw new NotFoundException('ไม่พบโปรไฟล์');
 
-    const [addresses, orders] = await Promise.all([
+    const [addresses, orders, loyalty] = await Promise.all([
       this.listAddressRows(scope),
       this.prisma.order.findMany({
         where: { customerId: scope.customerId, brandId: scope.brandId },
@@ -117,6 +120,8 @@ export class ProfileService {
           items: { select: { nameSnapshot: true, qty: true } },
         },
       }),
+      // US-50: การ์ดแต้ม + แท็บ "แต้ม" ใน LIFF ติดขึ้นมาเองเมื่อ endpoint นี้คืนค่าไม่ใช่ null
+      this.loyalty.summaryForProfile(scope, customer.pointsBalance).catch(() => null),
     ]);
 
     const phone = decryptSecret(customer.phoneEnc);
@@ -131,8 +136,7 @@ export class ProfileService {
       addresses,
       addressLimit: MAX_SAVED_ADDRESSES,
       recentOrders: orders,
-      // EP-14 (US-50) ยังไม่ลง — คงคีย์ไว้ให้ LIFF เขียนโค้ดรอได้ โดยไม่ต้องเดาโครงสร้าง
-      loyalty: null,
+      loyalty,
     };
   }
 
