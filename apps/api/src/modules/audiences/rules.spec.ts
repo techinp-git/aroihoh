@@ -16,6 +16,7 @@ const cust = (over: Partial<AudienceCustomer>): AudienceCustomer => ({
   createdAt: daysAgo(10),
   tags: [],
   marketingOptedOut: false,
+  marketingConsentAt: new Date('2026-01-01'), // PDPA: ยินยอมแล้ว ไม่งั้นถูกตัดออกก่อนเช็คเกณฑ์
   orders: [],
   ...over,
 });
@@ -124,6 +125,7 @@ describe('เกณฑ์ points_min (US-57)', () => {
     createdAt: new Date('2026-01-01'),
     tags: [],
     marketingOptedOut: false,
+    marketingConsentAt: new Date('2026-01-01'),
     orders: [],
   };
   const now = new Date('2026-09-08').getTime();
@@ -144,5 +146,26 @@ describe('เกณฑ์ points_min (US-57)', () => {
   it('validateRules: points ต้อง ≥ 1', () => {
     expect(() => validateRules({ match: 'all', criteria: [{ type: 'points_min', points: 0 }] })).toThrow();
     expect(() => validateRules({ match: 'all', criteria: [{ type: 'points_min', points: 50 }] })).not.toThrow();
+  });
+});
+
+describe('matchesAudience — PDPA ม.19 ต้องยินยอมก่อน', () => {
+  const base = {
+    id: 'c1', createdAt: daysAgo(400), tags: [], marketingOptedOut: false, orders: [],
+  };
+  const anyone: AudienceRules = { match: 'all', criteria: [] };
+
+  it('ยังไม่เคยยินยอม → ไม่เข้ากลุ่ม แม้เกณฑ์ว่าง (ทุกคน)', () => {
+    expect(matchesAudience({ ...base, marketingConsentAt: null }, anyone, NOW)).toBe(false);
+  });
+
+  it('ยินยอมแล้ว → เข้ากลุ่มตามปกติ', () => {
+    expect(matchesAudience({ ...base, marketingConsentAt: daysAgo(10) }, anyone, NOW)).toBe(true);
+  });
+
+  it('ถอนความยินยอมชนะเสมอ แม้เคยยินยอม', () => {
+    expect(matchesAudience(
+      { ...base, marketingConsentAt: daysAgo(10), marketingOptedOut: true }, anyone, NOW,
+    )).toBe(false);
   });
 });

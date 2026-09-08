@@ -100,9 +100,14 @@ export class CustomersService {
   async setOptOut(brandId: string, customerId: string, optedOut: boolean) {
     const c = await this.prisma.customer.findFirst({ where: { id: customerId, brandId } });
     if (!c) throw new NotFoundException('ไม่พบลูกค้า');
+    // PDPA: ให้ผลเหมือนฝั่งลูกค้ากดเอง — แอดมินเปิดรับข่าวสารให้ = บันทึกความยินยอม
+    // (ร้านรับรองว่าได้ขอมาแล้ว เช่น ถามปากเปล่าหน้าร้าน) ไม่ใช่แค่ปลดธง
+    // ไม่งั้นแอดมินกดเปิดแล้วลูกค้ายังไม่ถูกนับเป็นผู้รับ ดูเหมือนระบบพัง
     return this.prisma.customer.update({
       where: { id: customerId },
-      data: { marketingOptedOut: optedOut },
+      data: optedOut
+        ? { marketingOptedOut: true, marketingConsentAt: null, marketingConsentSource: null }
+        : { marketingOptedOut: false, marketingConsentAt: new Date(), marketingConsentSource: 'admin' },
       select: { id: true, marketingOptedOut: true },
     });
   }

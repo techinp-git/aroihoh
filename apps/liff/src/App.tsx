@@ -13,6 +13,8 @@ import {
   getMenu,
   getBrand,
   getProfile,
+  updateProfile,
+  POLICY_VERSION,
   getLoyaltyMe,
   earnPoints,
   createRedemption,
@@ -50,6 +52,7 @@ const STATUS_TH: Record<string, string> = {
   ready: 'จัดเสร็จ รอไรเดอร์', delivering: 'กำลังจัดส่ง', completed: 'ส่งสำเร็จ', cancelled: 'ยกเลิก',
 };
 const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined;
+const PRIVACY_URL = (import.meta.env.VITE_PRIVACY_URL as string | undefined) || '';
 
 interface CartLine { item: MenuItem; qty: number; }
 
@@ -401,6 +404,29 @@ export default function App() {
 
       <div className="body">
         {error && <div className="alert">{error}</div>}
+
+        {/* PDPA: แจ้งครั้งแรกว่าใช้ข้อมูลอะไร — เป็นการแจ้ง ไม่ใช่ขอความยินยอม
+            จึงเป็นแถบปิดได้ ไม่ใช่ป๊อปอัปบังหน้าจอที่ขวางการสั่งอาหาร */}
+        {profile && !profile.policyAcknowledged && (
+          <div className="notice">
+            <span>
+              เพื่อรับออเดอร์และจัดส่งให้คุณ เราใช้ชื่อ LINE ที่อยู่จัดส่ง และประวัติการสั่งของคุณ
+              {PRIVACY_URL && (
+                <> · <a href={PRIVACY_URL} target="_blank" rel="noreferrer">อ่านนโยบาย</a></>
+              )}
+            </span>
+            <button
+              className="linkbtn"
+              onClick={() => {
+                // ปิดทันทีไม่ต้องรอ server — ถ้าบันทึกพลาดก็แค่โผล่ใหม่รอบหน้า ไม่ใช่เรื่องคอขาดบาดตาย
+                setProfile({ ...profile, policyAcknowledged: true });
+                updateProfile({ acceptPolicyVersion: POLICY_VERSION }).then(setProfile).catch(() => {});
+              }}
+            >
+              รับทราบ
+            </button>
+          </div>
+        )}
 
         {/* ── ผลการสแกน QR สะสมแต้ม (US-52) — ทับเนื้อหาแท็บจนกว่าจะกดปุ่มออก ── */}
         {earnOutcome && (

@@ -33,7 +33,7 @@ export class BroadcastsService {
   private async brandCustomers(brandId: string) {
     return this.prisma.customer.findMany({
       where: { brandId },
-      select: { id: true, tags: true, marketingOptedOut: true },
+      select: { id: true, tags: true, marketingOptedOut: true, marketingConsentAt: true },
     });
   }
 
@@ -49,6 +49,9 @@ export class BroadcastsService {
     return {
       totalCustomers: customers.length,
       optedOut: customers.filter((c) => c.marketingOptedOut).length,
+      // PDPA: แยกให้เห็นว่า reach ที่หายไปมาจาก "ปฏิเสธ" หรือ "ยังไม่เคยถูกขอความยินยอม"
+      // ไม่งั้นเจ้าของร้านเห็นตัวเลขตกแล้วนึกว่าระบบพัง
+      noConsent: customers.filter((c) => !c.marketingOptedOut && c.marketingConsentAt == null).length,
       audienceCount: audience.length,
     };
   }

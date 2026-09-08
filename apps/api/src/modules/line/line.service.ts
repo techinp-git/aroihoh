@@ -22,6 +22,12 @@ interface SendOpts {
   dedupeKey?: string; // idempotency (เช่น status push) — ไม่ใส่ = gen ใหม่ทุกครั้ง
 }
 
+import {
+  UNSUBSCRIBE_CONFIRM,
+  isUnsubscribeRequest,
+  withUnsubscribeHint,
+} from './marketing-text';
+
 @Injectable()
 export class LineService {
   private readonly log = new Logger('LineService');
@@ -140,8 +146,19 @@ export class LineService {
           await this.prisma.chatMessage.create({
             data: { brandId, customerId: cust.id, direction: 'inbound', text: ev.message?.text ?? '', isRead: false },
           });
+          // PDPA: ลูกค้าพิมพ์ "หยุดข่าวสาร" = ถอนความยินยอมทันที ต้องมาก่อน auto-reply
+          // ถอนต้องง่ายอย่างน้อยเท่ากับตอนสมัคร ไม่ใช่บังคับให้เข้าแอปไปกดเอง
+          const inboundText = ev.message?.text ?? '';
+          if (isUnsubscribeRequest(inboundText)) {
+            await this.prisma.customer.update({
+              where: { id: cust.id },
+              data: { marketingOptedOut: true, marketingConsentAt: null, marketingConsentSource: null },
+            });
+          }
           // auto-reply ด้วย reply token (ฟรี ไม่กินโควตา) + เก็บ outbound ลงแชต
-          const reply = await this.autoReplyText(brandId, ev.message?.text ?? '');
+          const reply = isUnsubscribeRequest(inboundText)
+            ? UNSUBSCRIBE_CONFIRM
+            : await this.autoReplyText(brandId, inboundText);
           const sent = await this.sendToCustomer(brandId, userId, reply, {
             replyToken: ev.replyToken,
             type: 'auto_reply',
@@ -174,7 +191,13 @@ export class LineService {
           });
         } else if (ev.type === 'follow' && userId) {
           const cust = await this.upsertCustomer(brandId, userId);
-          await this.sendToCustomer(brandId, userId, 'ยินดีต้อนรับ! 🙏 พิมพ์ "เมนู" เพื่อสั่งอาหารได้เลยครับ', {
+          // PDPA: แจ้งลิงก์นโยบายตั้งแต่แรกที่ติดตาม — ต่อท้ายเฉพาะเมื่อเผยแพร่นโยบายแล้ว
+          // (ยังไม่ตั้ง env = ไม่ใส่ลิงก์ ดีกว่าพาลูกค้าไปหน้า 404)
+          const policyUrl = process.env.PUBLIC_PRIVACY_URL?.trim();
+          const welcome =
+            'ยินดีต้อนรับ! 🙏 พิมพ์ "เมนู" เพื่อสั่งอาหารได้เลยครับ' +
+            (policyUrl ? `\n\nเมื่อสั่งอาหารหรือทักแชต เราเก็บข้อมูลเท่าที่จำเป็นตามนโยบายความเป็นส่วนตัว: ${policyUrl}` : '');
+          await this.sendToCustomer(brandId, userId, welcome, {
             replyToken: ev.replyToken,
             type: 'welcome',
             customerId: cust.id,
@@ -220,7 +243,9 @@ export class LineService {
       const cust = lg.customerId
         ? await this.prisma.customer.findUnique({ where: { id: lg.customerId }, select: { lineUserId: true } })
         : null;
-      const r = cust ? await this.line.pushText(brandId, cust.lineUserId, bc.message) : { ok: false };
+      // PDPA: ต่อท้ายวิธีปฏิเสธให้ทุกฉบับที่ตรงนี้ที่เดียว — ไม่ฝากไว้กับคนเขียนข้อความ
+      const body = withUnsubscribeHint(bc.message);
+      const r = cust ? await this.line.pushText(brandId, cust.lineUserId, body) : { ok: false };
       if (r.ok) {
         sent++;
         await this.prisma.messageLog.update({ where: { id: lg.id }, data: { status: 'sent', channel: 'push' } });

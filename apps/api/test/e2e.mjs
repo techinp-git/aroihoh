@@ -719,12 +719,19 @@ async function main() {
   });
   ok(notEnough.status === 422, 'แต้มไม่พอแต่ขอส่วนลด → 422 ไม่สร้างออเดอร์', `ได้ ${notEnough.status}`);
 
-  // audience rule "แต้ม ≥ N" (US-57)
+  // audience rule "แต้ม ≥ N" (US-57) — ต้องยินยอมรับข่าวสารก่อน ไม่งั้นถูกตัดออกตั้งแต่ต้น (PDPA)
+  const earnerAdmin = ((await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken })).body || [])
+    .find((c) => c.lineUserId === 'Udev-' + earnerLogin.body.customer.displayName.toLowerCase());
+  if (earnerAdmin) {
+    await req('PATCH', `/admin/customers/${earnerAdmin.id}/opt-out?brandId=${brandId}`, {
+      token: adminToken, body: { optedOut: false },
+    });
+  }
   const ptsAudience = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
     token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 1 }] } },
   });
   ok(is2xx(ptsAudience.status) && ptsAudience.body?.audienceCount >= 1,
-    'audience rule แต้ม ≥ 1 หาลูกค้าเจอ', JSON.stringify(ptsAudience.body));
+    'audience rule แต้ม ≥ 1 หาลูกค้าเจอ (ต้องยินยอมรับข่าวสารด้วย)', JSON.stringify(ptsAudience.body));
   const ptsHuge = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
     token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 9999999 }] } },
   });
@@ -822,6 +829,14 @@ async function main() {
   ok(resume.status === 200 && resume.body?.isOpen === true, 'เปิดร้านคืน');
 
   // 16) US-31 LINE broadcast + PDPA opt-out
+  // PDPA ม.19: ตั้งแต่เปลี่ยนเป็น opt-in ลูกค้าต้องยินยอมก่อนถึงจะถูกนับเป็นผู้รับ
+  // DB ใหม่ (CI) ทุกคนยังไม่เคยยินยอม → ต้องบันทึกความยินยอมให้ก่อน ไม่งั้นกลุ่มผู้รับว่างเปล่า
+  const allCust = await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken });
+  for (const c of allCust.body || []) {
+    await req('PATCH', `/admin/customers/${c.id}/opt-out?brandId=${brandId}`, {
+      token: adminToken, body: { optedOut: false },
+    });
+  }
   const prev0 = await req('POST', `/admin/broadcasts/preview?brandId=${brandId}`, { token: adminToken, body: {} });
   ok(is2xx(prev0.status) && typeof prev0.body?.audienceCount === 'number', 'broadcast preview (reach)', JSON.stringify(prev0.body));
   const baseAudience = prev0.body.audienceCount;
@@ -915,6 +930,68 @@ async function main() {
   // dispatch broadcast → skipped (ยังไม่มี access token ใน CI)
   const disp = await req('POST', `/admin/broadcasts/${combo.body.id}/dispatch?brandId=${brandId}`, { token: adminToken });
   ok(is2xx(disp.status) && disp.body?.skipped === true, 'dispatch broadcast → skipped (ยังไม่เชื่อม LINE)', JSON.stringify(disp.body));
+
+  // 20b) PDPA — ความยินยอมรับข่าวสาร (ม.19 ต้องขอก่อนส่ง)
+  const pdpaLogin = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-pdpa-' + uuid() } });
+  const pdpaTok = pdpaLogin.body?.accessToken;
+  const pdpaId = pdpaLogin.body?.customer?.id;
+
+  const p0 = await req('GET', '/me/profile', { token: pdpaTok });
+  ok(p0.body?.askMarketingConsent === true, 'ลูกค้าใหม่ = ยังไม่เคยยินยอม → LIFF ต้องถาม');
+  ok(p0.body?.policyAcknowledged === false, 'ลูกค้าใหม่ยังไม่ได้กดรับทราบนโยบาย');
+
+  const reachBefore = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [] } },
+  });
+  ok(typeof reachBefore.body?.noConsent === 'number', 'preview บอกจำนวนคนที่ยังไม่เคยยินยอม (แยกจากคนที่ปฏิเสธ)');
+
+  // ⭐ ยังไม่ยินยอม = ไม่อยู่ในกลุ่มผู้รับ แม้ไม่ได้กดปฏิเสธ
+  const audAll = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [] } },
+  });
+  const beforeCount = audAll.body?.audienceCount;
+  const agree = await req('PATCH', '/me/profile', { token: pdpaTok, body: { marketingOptedOut: false } });
+  ok(agree.body?.askMarketingConsent === false, 'กดรับข่าวสารแล้ว → ไม่ถามซ้ำ');
+  const audAfter = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [] } },
+  });
+  ok(audAfter.body?.audienceCount === beforeCount + 1, '⭐ ยินยอมแล้วจึงถูกนับเป็นผู้รับ (+1)', `${beforeCount} → ${audAfter.body?.audienceCount}`);
+
+  // ถอนความยินยอม → หลุดออกจากกลุ่มทันที
+  await req('PATCH', '/me/profile', { token: pdpaTok, body: { marketingOptedOut: true } });
+  const audOut = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [] } },
+  });
+  ok(audOut.body?.audienceCount === beforeCount, 'ถอนความยินยอม → หลุดจากกลุ่มผู้รับ', `ได้ ${audOut.body?.audienceCount}`);
+
+  // รับทราบนโยบาย
+  const acked = await req('PATCH', '/me/profile', { token: pdpaTok, body: { acceptPolicyVersion: '1.0' } });
+  ok(acked.body?.policyAcknowledged === true, 'กดรับทราบนโยบายแล้วบันทึกไว้');
+
+  // ⭐ พิมพ์ "หยุดข่าวสาร" ทาง LINE = ถอนความยินยอมทันที (ถอนต้องง่ายเท่าสมัคร)
+  const stopUser = 'Ue2e-stop-' + Date.now();
+  const stopBody = JSON.stringify({
+    events: [{ type: 'message', message: { type: 'text', text: 'หยุดข่าวสาร' }, source: { userId: stopUser } }],
+  });
+  const stopSig = createHmac('sha256', LINE_SECRET).update(Buffer.from(stopBody)).digest('base64');
+  const stopRes = await fetch(`${BASE}/line/webhook/${brandId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-line-signature': stopSig },
+    body: stopBody,
+  });
+  ok(stopRes.status === 200, 'webhook "หยุดข่าวสาร" → 200');
+  const stopCust = ((await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken })).body || [])
+    .find((c) => c.lineUserId === stopUser);
+  ok(stopCust?.marketingOptedOut === true, '⭐ พิมพ์ "หยุดข่าวสาร" ใน LINE → ถอนความยินยอมอัตโนมัติ', JSON.stringify(stopCust?.marketingOptedOut));
+
+  // PDPA สิทธิขอลบข้อมูล → เข้ากล่องแชตของร้าน
+  const delReq = await req('POST', '/me/delete-request', { token: pdpaTok });
+  ok(is2xx(delReq.status) && delReq.body?.received === true, 'ลูกค้าส่งคำขอลบข้อมูลได้');
+  const delThread = await req('GET', `/admin/chat/${pdpaId}?brandId=${brandId}`, { token: adminToken });
+  ok(
+    (delThread.body?.messages || []).some((m) => m.text?.startsWith('[คำขอลบข้อมูล]')),
+    'คำขอลบข้อมูลโผล่ในกล่องแชตให้ร้านเห็น',
+  );
 
   // 21) LINE config (US-25/SETUP-1) — owner only, ไม่คืน secret/token ดิบ
   const cfg0 = await req('GET', `/admin/line-config?brandId=${brandId}`, { token: adminToken });
