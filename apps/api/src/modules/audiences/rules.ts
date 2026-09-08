@@ -1,14 +1,14 @@
 /**
  * Audience rule engine — pure (unit-testable, ไม่แตะ DB)
  * ประเมิน "กลุ่มเป้าหมาย" จากพฤติกรรมลูกค้าแบบ dynamic (คำนวณสดตอน preview/ส่ง)
- * กติกาเหล็ก #6 (PDPA): opt-out ถูกกันออกเสมอ ไม่ว่ากติกาจะ match หรือไม่
+ * กติกาเหล็ก #6 (PDPA): คนที่ไม่ได้ยินยอม/ถอนแล้ว ถูกกันออกเสมอ ไม่ว่ากติกาจะ match หรือไม่
  */
+import { canReceiveMarketing, type MarketingConsentState } from '../../common/marketing-consent';
 
-export interface AudienceCustomer {
+export interface AudienceCustomer extends MarketingConsentState {
   id: string;
   createdAt: Date | string;
   tags: string[];
-  marketingOptedOut: boolean;
   orders: { createdAt: Date | string }[];
   /** US-57: แต้มคงเหลือ (ไม่มี = ถือว่า 0) */
   pointsBalance?: number;
@@ -68,11 +68,11 @@ export function matchesCriterion(c: Criterion, cust: AudienceCustomer, nowMs: nu
   }
 }
 
-/** ลูกค้าคนนี้เข้ากลุ่มเป้าหมายนี้ไหม — opt-out ตัดทิ้งก่อนเสมอ (#6) */
+/** ลูกค้าคนนี้เข้ากลุ่มเป้าหมายนี้ไหม — คนที่ส่งการตลาดไม่ได้ ตัดทิ้งก่อนเสมอ (#6) */
 export function matchesAudience(cust: AudienceCustomer, rules: AudienceRules, nowMs: number): boolean {
-  if (cust.marketingOptedOut) return false;
+  if (!canReceiveMarketing(cust)) return false;
   const crit = rules.criteria ?? [];
-  if (crit.length === 0) return true; // ไม่มีเกณฑ์ = ทุกคน (ที่ไม่ opt-out)
+  if (crit.length === 0) return true; // ไม่มีเกณฑ์ = ทุกคนที่ส่งได้
   const results = crit.map((c) => matchesCriterion(c, cust, nowMs));
   return rules.match === 'any' ? results.some(Boolean) : results.every(Boolean);
 }

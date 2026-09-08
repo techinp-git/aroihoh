@@ -38,6 +38,12 @@ export class ProfileController {
     return this.profile.updateProfile(this.scope(customer), dto);
   }
 
+  /** PDPA: ลูกค้ากดขอลบข้อมูลของตัวเอง — เข้ากล่องแชตให้ร้านดำเนินการ */
+  @Post('delete-request')
+  requestDeletion(@CurrentCustomer() customer: CustomerJwt) {
+    return this.profile.requestDeletion(this.scope(customer));
+  }
+
   @Get('addresses')
   listAddresses(@CurrentCustomer() customer: CustomerJwt) {
     return this.profile.listAddresses(this.scope(customer));

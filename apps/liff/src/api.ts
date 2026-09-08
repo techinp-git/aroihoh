@@ -146,6 +146,10 @@ export interface Profile {
   hasPhone: boolean;
   phoneLast4: string | null;
   marketingOptedOut: boolean;
+  /** PDPA: ยังไม่เคยถูกขอความยินยอมจริง → LIFF โชว์การ์ดถาม */
+  askMarketingConsent: boolean;
+  /** เคยกดรับทราบนโยบายความเป็นส่วนตัวแล้วหรือยัง */
+  policyAcknowledged: boolean;
   addresses: SavedAddress[];
   addressLimit: number;
   recentOrders: RecentOrder[];
@@ -217,8 +221,18 @@ export const cancelRedemption = (id: string) =>
   api<{ cancelled: boolean }>(`/loyalty/redemptions/${id}/cancel`, { method: 'POST' });
 
 /** US-60: เบอร์โทร (เก็บแบบเข้ารหัส) + เลือกรับ/ไม่รับข่าวสารเอง — ส่ง phone:'' เพื่อลบเบอร์ */
-export const updateProfile = (body: { phone?: string | null; marketingOptedOut?: boolean }) =>
-  api<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
+export const updateProfile = (body: {
+  phone?: string | null;
+  marketingOptedOut?: boolean;
+  acceptPolicyVersion?: string;
+}) => api<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
+
+/** ฉบับของนโยบายที่แอปนี้แสดงอยู่ — ขึ้นเลขใหม่เมื่อแก้สาระสำคัญ เพื่อให้ถามรับทราบอีกครั้ง */
+export const POLICY_VERSION = '1.0';
+
+/** PDPA: ขอใช้สิทธิให้ลบข้อมูล — ส่งเข้ากล่องแชตให้ร้านดำเนินการ */
+export const requestDeletion = () =>
+  api<{ received: boolean; respondWithinDays: number }>('/me/delete-request', { method: 'POST' });
 
 export const createAddress = (body: AddressInput) =>
   api<AddressBook & { created: string }>('/me/addresses', {

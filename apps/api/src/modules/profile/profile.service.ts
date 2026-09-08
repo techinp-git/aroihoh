@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { encryptSecret, decryptSecret } from '../../common/crypto';
+import { shouldAskConsent } from '../../common/marketing-consent';
 import {
   MAX_SAVED_ADDRESSES,
   canAddSavedAddress,
@@ -100,6 +101,9 @@ export class ProfileService {
         pictureUrl: true,
         phoneEnc: true,
         marketingOptedOut: true,
+        marketingConsentAt: true,
+        marketingConsentSource: true,
+        policyAcceptedVersion: true,
         pointsBalance: true,
         createdAt: true,
       },
@@ -133,6 +137,9 @@ export class ProfileService {
       hasPhone: !!phone,
       phoneLast4: phoneLast4(phone),
       marketingOptedOut: customer.marketingOptedOut,
+      // PDPA: LIFF ใช้ 2 ค่านี้ตัดสินว่าจะโชว์การ์ดขอความยินยอม/แถบแจ้งครั้งแรกไหม
+      askMarketingConsent: shouldAskConsent(customer),
+      policyAcknowledged: customer.policyAcceptedVersion != null,
       addresses,
       addressLimit: MAX_SAVED_ADDRESSES,
       recentOrders: orders,
@@ -142,7 +149,14 @@ export class ProfileService {
 
   /** US-58/US-60: ลูกค้าแก้เบอร์ + เลือกรับ/ไม่รับข่าวสารเอง (PDPA self-service) */
   async updateProfile(scope: CustomerScope, dto: UpdateProfileDto) {
-    const data: { phoneEnc?: string | null; marketingOptedOut?: boolean } = {};
+    const data: {
+      phoneEnc?: string | null;
+      marketingOptedOut?: boolean;
+      marketingConsentAt?: Date | null;
+      marketingConsentSource?: string | null;
+      policyAcceptedVersion?: string;
+      policyAcceptedAt?: Date;
+    } = {};
 
     if (dto.phone !== undefined) {
       const raw = (dto.phone ?? '').trim();
@@ -157,6 +171,20 @@ export class ProfileService {
     }
     if (dto.marketingOptedOut !== undefined) {
       data.marketingOptedOut = dto.marketingOptedOut;
+      // PDPA: กดรับข่าวสาร = ให้ความยินยอม ต้องบันทึกว่าเมื่อไรและมาจากไหน (ต้องพิสูจน์ได้)
+      // กดปฏิเสธ = ถอนความยินยอม ลบวันที่ทิ้งด้วย ไม่ใช่แค่ตั้งธง
+      if (dto.marketingOptedOut === false) {
+        data.marketingConsentAt = new Date();
+        data.marketingConsentSource = 'liff';
+      } else {
+        data.marketingConsentAt = null;
+        data.marketingConsentSource = null;
+      }
+    }
+    // รับทราบนโยบายความเป็นส่วนตัว (แถบแจ้งครั้งแรกใน LIFF)
+    if (dto.acceptPolicyVersion) {
+      data.policyAcceptedVersion = dto.acceptPolicyVersion;
+      data.policyAcceptedAt = new Date();
     }
     if (Object.keys(data).length === 0) return this.getProfile(scope);
 
@@ -165,6 +193,37 @@ export class ProfileService {
       data,
     });
     return this.getProfile(scope);
+  }
+
+  /**
+   * PDPA สิทธิขอลบข้อมูล — ยังไม่ลบให้อัตโนมัติ เพราะต้องตรวจก่อนว่ามีออเดอร์ค้าง
+   * หรือหน้าที่ทางบัญชีที่ต้องเก็บไว้ไหม · ส่งเข้ากล่องแชตของร้านเพื่อให้เจ้าของเห็นและดำเนินการ
+   * ตามขั้นตอนใน docs/pdpa/data-subject-requests.md (กฎหมายให้เวลาตอบ 30 วัน)
+   */
+  async requestDeletion(scope: CustomerScope) {
+    const recent = await this.prisma.chatMessage.findFirst({
+      where: {
+        customerId: scope.customerId,
+        brandId: scope.brandId,
+        direction: 'inbound',
+        text: { startsWith: '[คำขอลบข้อมูล]' },
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      },
+      select: { id: true },
+    });
+    // กดซ้ำในวันเดียวกันไม่ต้องแจ้งร้านซ้ำ แต่ตอบลูกค้าเหมือนเดิม (เขาไม่ต้องรู้กลไกข้างใน)
+    if (!recent) {
+      await this.prisma.chatMessage.create({
+        data: {
+          brandId: scope.brandId,
+          customerId: scope.customerId,
+          direction: 'inbound',
+          text: '[คำขอลบข้อมูล] ลูกค้าขอใช้สิทธิให้ลบข้อมูลส่วนบุคคล — ต้องตอบภายใน 30 วัน (ดู docs/pdpa/data-subject-requests.md)',
+          isRead: false,
+        },
+      });
+    }
+    return { received: true, respondWithinDays: 30 };
   }
 
   /**

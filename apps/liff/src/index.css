@@ -186,3 +186,10 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .coupon-qr { width: 220px; height: 220px; max-width: 100%; margin: 14px auto 6px; display: block; }
 .coupon-timer { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--brand-primary, var(--accent)); }
 .coupon-code { margin-top: 12px; font-family: ui-monospace, monospace; font-size: 19px; font-weight: 700; letter-spacing: 1px; background: var(--page); padding: 8px 12px; border-radius: 10px; }
+
+/* ── PDPA: แถบแจ้งครั้งแรก + การ์ดขอความยินยอม ── */
+.notice { display: flex; align-items: flex-start; gap: 10px; background: #f1f5f9; color: var(--muted); font-size: 12px; line-height: 1.5; padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; }
+.notice a { color: var(--brand-primary, var(--accent)); }
+.notice .linkbtn { flex: none; color: var(--brand-primary, var(--accent)); }
+.consent-card { border-color: var(--brand-primary, var(--accent)); }
+.consent-card .desc { font-size: 12px; color: var(--muted); line-height: 1.5; }

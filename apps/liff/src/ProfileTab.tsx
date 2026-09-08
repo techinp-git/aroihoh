@@ -6,6 +6,7 @@ import {
   deleteAddress,
   updateAddress,
   updateProfile,
+  requestDeletion,
   type DeliveryOrigin,
   type Profile,
   type SavedAddress,
@@ -85,6 +86,28 @@ export default function ProfileTab({
       setPhoneMsg((e as Error).message);
     } finally {
       setPhoneBusy(false);
+    }
+  };
+
+  const askConsent = async (agree: boolean) => {
+    setOptBusy(true);
+    try {
+      // ตอบว่าไม่รับ = บันทึกเป็นการปฏิเสธ ไม่ใช่ปล่อยว่างไว้ถามซ้ำเรื่อย ๆ
+      onProfile(await updateProfile({ marketingOptedOut: !agree }));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setOptBusy(false);
+    }
+  };
+
+  const askDelete = async () => {
+    if (!confirm('ส่งคำขอให้ร้านลบข้อมูลส่วนบุคคลของคุณ?\nร้านจะติดต่อกลับภายใน 30 วัน')) return;
+    try {
+      await requestDeletion();
+      alert('ส่งคำขอแล้ว ร้านจะติดต่อกลับภายใน 30 วัน');
+    } catch (e) {
+      setErr((e as Error).message);
     }
   };
 
@@ -239,6 +262,21 @@ export default function ProfileTab({
   // ── หน้าโปรไฟล์ ──
   return (
     <>
+      {/* PDPA ม.19: ถามก่อนส่งการตลาด — โผล่เฉพาะคนที่ยังไม่เคยถูกถามจริง */}
+      {profile.askMarketingConsent && (
+        <div className="card consent-card">
+          <h3>รับโปรโมชันและเมนูใหม่ก่อนใครไหม?</h3>
+          <div className="desc">
+            เราจะส่งให้เท่าที่จำเป็น และคุณปิดได้ทุกเมื่อในหน้านี้ ·
+            ไม่รับก็สั่งอาหารได้ตามปกติ และยังได้รับข้อความแจ้งสถานะออเดอร์อยู่
+          </div>
+          <div className="rowbtns">
+            <button className="btn ghost" onClick={() => askConsent(false)} disabled={optBusy}>ไม่เป็นไร</button>
+            <button className="btn primary" onClick={() => askConsent(true)} disabled={optBusy}>รับข่าวสาร</button>
+          </div>
+        </div>
+      )}
+
       <div className="prof-hero">
         {profile.pictureUrl ? (
           <img className="prof-avatar" src={profile.pictureUrl} alt="" />
@@ -360,6 +398,14 @@ export default function ProfileTab({
           >
             <span className="knob" />
           </button>
+        </div>
+
+        <div className="setting-row" style={{ marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>ขอให้ลบข้อมูลของฉัน</div>
+            <div className="desc">ร้านจะติดต่อกลับภายใน 30 วัน · ประวัติการซื้อบางส่วนอาจต้องเก็บตามกฎหมายบัญชี</div>
+          </div>
+          <button className="linkbtn" onClick={askDelete}>ส่งคำขอ</button>
         </div>
 
         {PRIVACY_URL && (

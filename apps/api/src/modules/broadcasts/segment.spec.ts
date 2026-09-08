@@ -1,6 +1,13 @@
 import { resolveAudience, dedupeKeyFor } from './segment';
 
-const c = (id: string, tags: string[], optedOut = false) => ({ id, tags, marketingOptedOut: optedOut });
+// ลูกค้าที่ยินยอมรับข่าวสารแล้ว (ค่าเริ่มต้น) — PDPA: ไม่ยินยอม = ไม่เข้ากลุ่มผู้รับ
+const c = (id: string, tags: string[], optedOut = false) => ({
+  id, tags, marketingOptedOut: optedOut, marketingConsentAt: new Date('2026-01-01'),
+});
+/** ยังไม่เคยยินยอม (ลูกค้าใหม่หลังเปลี่ยนเป็น opt-in) */
+const cNoConsent = (id: string, tags: string[] = []) => ({
+  id, tags, marketingOptedOut: false, marketingConsentAt: null,
+});
 
 describe('resolveAudience', () => {
   const base = [
@@ -43,5 +50,17 @@ describe('dedupeKeyFor', () => {
     expect(dedupeKeyFor('bc1', 'cust1')).toBe('bcast:bc1:cust1');
     expect(dedupeKeyFor('bc1', 'cust1')).toBe(dedupeKeyFor('bc1', 'cust1'));
     expect(dedupeKeyFor('bc1', 'cust2')).not.toBe(dedupeKeyFor('bc1', 'cust1'));
+  });
+});
+
+describe('resolveAudience — PDPA ม.19 ต้องยินยอมก่อน', () => {
+  it('ลูกค้าที่ยังไม่เคยยินยอม ไม่ถูกนับเป็นผู้รับ แม้ไม่ได้กดปฏิเสธ', () => {
+    const got = resolveAudience([c('yes', []), cNoConsent('new')]);
+    expect(got.map((x) => x.id)).toEqual(['yes']);
+  });
+
+  it('แท็กตรงแต่ยังไม่ยินยอม = ยังส่งไม่ได้ (เกณฑ์กลุ่มไม่ลบล้างความยินยอม)', () => {
+    const got = resolveAudience([cNoConsent('new', ['VIP'])], { tags: ['VIP'] });
+    expect(got).toHaveLength(0);
   });
 });

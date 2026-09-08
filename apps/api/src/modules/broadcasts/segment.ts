@@ -1,12 +1,12 @@
 /**
  * Broadcast audience resolution — pure (unit-testable, ไม่แตะ DB)
- * กติกาเหล็ก #6 (PDPA): ต้องหักลูกค้าที่ opt-out ออกเสมอ ห้ามส่งถึงคนที่ปฏิเสธ
+ * กติกาเหล็ก #6 (PDPA): ส่งได้เฉพาะคนที่ยินยอมและยังไม่ถอน — ตัดสินที่ canReceiveMarketing ที่เดียว
  */
+import { canReceiveMarketing, type MarketingConsentState } from '../../common/marketing-consent';
 
-export interface AudienceCustomer {
+export interface AudienceCustomer extends MarketingConsentState {
   id: string;
   tags: string[];
-  marketingOptedOut: boolean;
 }
 
 /** เกณฑ์กลุ่มเป้าหมาย — null/ไม่มี tags = ทุกคน (ที่ไม่ opt-out) */
@@ -16,7 +16,7 @@ export interface Segment {
 
 /**
  * คืนเฉพาะลูกค้าที่ "ส่งได้จริง":
- *  1. ไม่ opt-out (PDPA — บังคับเสมอ)
+ *  1. ยินยอมรับข่าวสารและยังไม่ถอน (PDPA ม.19 — บังคับเสมอ)
  *  2. ถ้าระบุ segment.tags → ต้องมีแท็กตรงอย่างน้อย 1 (intersection)
  * segment ว่าง/ไม่มี tags → ทุกคนที่ไม่ opt-out
  */
@@ -26,7 +26,7 @@ export function resolveAudience<T extends AudienceCustomer>(
 ): T[] {
   const wanted = segment?.tags?.filter((t) => t.trim()) ?? [];
   return customers.filter((c) => {
-    if (c.marketingOptedOut) return false; // #6 PDPA — ไม่มีข้อยกเว้น
+    if (!canReceiveMarketing(c)) return false; // #6 PDPA — ไม่มีข้อยกเว้น
     if (wanted.length === 0) return true;
     return c.tags.some((t) => wanted.includes(t));
   });
