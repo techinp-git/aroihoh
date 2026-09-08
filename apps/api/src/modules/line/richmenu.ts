@@ -56,15 +56,24 @@ export interface RichMenuBuildOpts {
   contactUri?: string | null;
 }
 
-/** ลิงก์เข้า LIFF พร้อม path ย่อย (LIFF รองรับ query/­path ต่อท้าย) */
-function liffUri(liffId: string, path?: string): string {
-  return path ? `https://liff.line.me/${liffId}?p=${path}` : `https://liff.line.me/${liffId}`;
+/** ปลายทาง deep link ที่ apps/liff รองรับจริง (อ่านจาก `?view=` ใน api.ts, US-59) */
+export type LiffDeepLinkView = 'points' | 'profile';
+
+/**
+ * ลิงก์เข้า LIFF — ระบุ view เพื่อยิงตรงเข้าแท็บ (ตรงกับที่ apps/liff อ่าน `?view=`, US-59)
+ * ⚠️ ค่า view ต้องเป็นปลายทางที่ LIFF มีจริง (points, profile) เท่านั้น —
+ * ของเดิมใช้ `?p=cart/track/orders` ซึ่ง app อ่านไม่ออก ปุ่มเลยตกไปหน้าเมนูทุกปุ่ม
+ * cart/track ไม่มี deep link แยก (ตะกร้าอยู่ในโฟลว์เมนู, ติดตามต้องมี orderId) →
+ * ใช้แท็บ profile (โชว์ออเดอร์ล่าสุด แตะเข้าหน้าติดตามได้) แทน
+ */
+function liffUri(liffId: string, view?: LiffDeepLinkView): string {
+  return view ? `https://liff.line.me/${liffId}?view=${view}` : `https://liff.line.me/${liffId}`;
 }
 
 /**
  * สร้าง Rich Menu object 6 โซน
- * แถวบน : สั่งอาหาร · ตะกร้า · ติดตามสถานะ
- * แถวล่าง: ประวัติการสั่ง · โปรโมชัน · ติดต่อร้าน
+ * แถวบน : สั่งอาหาร · แต้มสะสม · โปรไฟล์/ที่อยู่
+ * แถวล่าง: ออเดอร์ของฉัน · โปรโมชัน · ติดต่อร้าน
  *
  * ปุ่มที่ต้องใช้ LIFF จะถูกตัดทิ้งถ้ายังไม่มี liffId — เมนูจะได้ไม่มีปุ่มกดแล้วเงียบ
  */
@@ -76,10 +85,12 @@ export function buildRichMenu(opts: RichMenuBuildOpts): RichMenuObject {
     areas.push({ bounds: gridBounds(row, col), action });
 
   if (liffId) {
+    // deep link ตรงกับ scheme ?view= ที่ apps/liff รองรับ (ปลายทางจริง: menu, points, profile)
     add(0, 0, { type: 'uri', label: 'สั่งอาหาร', uri: liffUri(liffId) });
-    add(0, 1, { type: 'uri', label: 'ตะกร้า', uri: liffUri(liffId, 'cart') });
-    add(0, 2, { type: 'uri', label: 'ติดตามสถานะ', uri: liffUri(liffId, 'track') });
-    add(1, 0, { type: 'uri', label: 'ประวัติการสั่ง', uri: liffUri(liffId, 'orders') });
+    add(0, 1, { type: 'uri', label: 'แต้มสะสม', uri: liffUri(liffId, 'points') });
+    add(0, 2, { type: 'uri', label: 'โปรไฟล์/ที่อยู่', uri: liffUri(liffId, 'profile') });
+    // แท็บโปรไฟล์โชว์ออเดอร์ล่าสุด แตะแล้วเข้าหน้าติดตาม (ยังไม่มี deep link ประวัติแยก)
+    add(1, 0, { type: 'uri', label: 'ออเดอร์ของฉัน', uri: liffUri(liffId, 'profile') });
   } else {
     // ยังไม่มี LIFF (ก่อน SETUP-1) → ใช้ปุ่มส่งข้อความแทน ให้ auto-reply ตอบ
     add(0, 0, { type: 'message', label: 'สั่งอาหาร', text: 'เมนู' });
