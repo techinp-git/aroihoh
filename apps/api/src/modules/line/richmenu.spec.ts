@@ -39,12 +39,16 @@ describe('buildRichMenu — มี liffId', () => {
     expect(menu.size).toEqual({ width: RICH_MENU_WIDTH, height: RICH_MENU_HEIGHT_TALL });
   });
 
-  it('ปุ่ม LIFF deep link ถูกต้อง', () => {
+  it('ปุ่ม LIFF deep link ใช้ scheme ?view= ที่ apps/liff รองรับ', () => {
     const uris = menu.areas.filter((a) => a.action.type === 'uri').map((a) => a.action.uri);
-    expect(uris).toContain('https://liff.line.me/abc-123');
-    expect(uris).toContain('https://liff.line.me/abc-123?p=cart');
-    expect(uris).toContain('https://liff.line.me/abc-123?p=track');
-    expect(uris).toContain('https://liff.line.me/abc-123?p=orders');
+    expect(uris).toContain('https://liff.line.me/abc-123'); // สั่งอาหาร → หน้าเมนู
+    expect(uris).toContain('https://liff.line.me/abc-123?view=points'); // แต้มสะสม
+    expect(uris).toContain('https://liff.line.me/abc-123?view=profile'); // โปรไฟล์/ออเดอร์
+  });
+
+  it('ไม่มี ?p= ตกค้าง (scheme เก่าที่ LIFF app อ่านไม่ออก → ปุ่มตกไปหน้าเมนู)', () => {
+    const uris = menu.areas.map((a) => a.action.uri ?? '');
+    expect(uris.some((u) => u.includes('?p='))).toBe(false);
   });
 
   it('ชื่อเมนูมีชื่อแบรนด์ + chatBarText ไม่เกิน 14 ตัว (ลิมิต LINE)', () => {
