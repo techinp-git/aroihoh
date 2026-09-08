@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   confirmRedemption,
+  createLoyaltyBatch,
+  listLoyaltyBatches,
+  listLoyaltyCodes,
+  setLoyaltyBatchStatus,
   createLoyaltyReward,
   listLoyaltyRewards,
   previewRedemption,
   updateLoyaltyReward,
   baht,
+  type LoyaltyBatch,
   type LoyaltyReward,
   type RedemptionPreview,
 } from '../api';
 import { beep } from '../lib/beep';
+import { printHtml, qrStickerSheetHtml, type StickerLabel } from '../lib/print';
 
 /**
  * US-54 สแกนแลกแต้ม + US-53 จัดการของรางวัล
@@ -21,7 +27,9 @@ import { beep } from '../lib/beep';
  * ไม่ควรถ่วงทุกหน้าของแอดมินทั้งที่ใช้แค่หน้านี้
  */
 
-type Tab = 'scan' | 'rewards';
+type Tab = 'scan' | 'rewards' | 'batches';
+
+const BATCH_STATUS_TH: Record<string, string> = { draft: 'ยังไม่เปิดใช้', active: 'เปิดใช้แล้ว', revoked: 'ยกเลิกแล้ว' };
 
 export default function Loyalty({ brandId, canManage }: { brandId: string; canManage: boolean }) {
   const [tab, setTab] = useState<Tab>('scan');
@@ -32,12 +40,19 @@ export default function Loyalty({ brandId, canManage }: { brandId: string; canMa
           📷 สแกนแลกแต้ม
         </button>
         {canManage && (
-          <button className={'tab' + (tab === 'rewards' ? ' active' : '')} onClick={() => setTab('rewards')}>
-            🎁 ของรางวัล
-          </button>
+          <>
+            <button className={'tab' + (tab === 'batches' ? ' active' : '')} onClick={() => setTab('batches')}>
+              🏷️ ล็อต QR
+            </button>
+            <button className={'tab' + (tab === 'rewards' ? ' active' : '')} onClick={() => setTab('rewards')}>
+              🎁 ของรางวัล
+            </button>
+          </>
         )}
       </div>
-      {tab === 'scan' ? <ScanTab /> : <RewardsTab brandId={brandId} />}
+      {tab === 'scan' && <ScanTab />}
+      {tab === 'batches' && <BatchesTab brandId={brandId} />}
+      {tab === 'rewards' && <RewardsTab brandId={brandId} />}
     </>
   );
 }
@@ -287,6 +302,199 @@ function RewardsTab({ brandId }: { brandId: string }) {
                   <td><span className={`pill ${r.isActive ? 'completed' : 'cancelled'}`}>{r.isActive ? 'เปิด' : 'ปิด'}</span></td>
                   <td>
                     <button className="btn ghost" onClick={() => toggle(r)}>{r.isActive ? 'ปิด' : 'เปิด'}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ───────── ล็อต QR (US-51) ─────────
+
+/** ดาวน์โหลดไฟล์ที่สร้างในเบราว์เซอร์ — ใส่ BOM ให้ Excel อ่านภาษาไทยไม่เพี้ยน */
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function BatchesTab({ brandId }: { brandId: string }) {
+  const [rows, setRows] = useState<LoyaltyBatch[]>([]);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState('');
+  const [form, setForm] = useState({ name: '', points: '10', quantity: '100', expiresAt: '' });
+
+  const load = () => {
+    if (!brandId) return;
+    listLoyaltyBatches(brandId).then(setRows).catch((e) => setErr((e as Error).message));
+  };
+  useEffect(load, [brandId]);
+
+  const create = async () => {
+    const points = parseInt(form.points, 10);
+    const quantity = parseInt(form.quantity, 10);
+    if (!form.name.trim() || !points || !quantity) return setErr('กรอกชื่อล็อต แต้ม และจำนวนให้ครบ');
+    setBusy('new');
+    setErr('');
+    try {
+      await createLoyaltyBatch({
+        brandId,
+        name: form.name.trim(),
+        points,
+        quantity,
+        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
+      });
+      setForm({ name: '', points: '10', quantity: '100', expiresAt: '' });
+      setMsg('สร้างล็อตแล้ว — ยังเป็น "ยังไม่เปิดใช้" สแกนไม่ได้จนกว่าของจะถึงร้านแล้วกดเปิด');
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const setStatus = async (b: LoyaltyBatch, status: 'active' | 'revoked') => {
+    if (status === 'revoked' && !confirm(`ยกเลิกล็อต "${b.name}"? สติกเกอร์ที่แจกไปแล้วจะสแกนไม่ได้ทั้งหมด`)) return;
+    setBusy(b.id);
+    try {
+      await setLoyaltyBatchStatus(brandId, b.id, status);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const exportCsv = async (b: LoyaltyBatch) => {
+    setBusy(b.id);
+    setErr('');
+    try {
+      const res = await listLoyaltyCodes(brandId, b.id);
+      if (!res.batch.liffId) setErr('⚠️ แบรนด์นี้ยังไม่ได้ตั้ง LIFF ID — คอลัมน์ลิงก์จะว่าง ลูกค้าสแกนแล้วเปิดไม่ได้ (ตั้งที่ ตั้งค่า → เชื่อมต่อ LINE OA)');
+      downloadCsv(
+        `qr-${b.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+        [
+          ['code', 'human', 'points', 'url'],
+          ...res.codes.map((c) => [c.code, c.human, String(c.points), c.url ?? '']),
+        ],
+      );
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const printSheet = async (b: LoyaltyBatch) => {
+    setBusy(b.id);
+    setErr('');
+    try {
+      const res = await listLoyaltyCodes(brandId, b.id);
+      if (!res.batch.liffId) {
+        setErr('ยังไม่ได้ตั้ง LIFF ID ของแบรนด์นี้ — พิมพ์ไปลูกค้าสแกนแล้วเปิดไม่ได้ ตั้งที่ ตั้งค่า → เชื่อมต่อ LINE OA ก่อน');
+        return;
+      }
+      // qrcode หนักและใช้แค่ตอนพิมพ์ → โหลดตอนกดเท่านั้น
+      const QRCode = (await import('qrcode')).default;
+      const labels: StickerLabel[] = await Promise.all(
+        res.codes.map(async (c) => ({
+          qrDataUrl: await QRCode.toDataURL(c.url!, { width: 300, margin: 0, errorCorrectionLevel: 'M' }),
+          human: c.human,
+          points: c.points,
+        })),
+      );
+      printHtml(qrStickerSheetHtml(labels, { brandName: res.batch.brandName, batchName: res.batch.name }));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <>
+      {err && <div className="alert error">{err}</div>}
+      {msg && <div className="alert info">{msg}</div>}
+
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div className="stat-label" style={{ marginBottom: 10 }}>สร้างล็อตสติกเกอร์ QR</div>
+        <div className="scan-manual">
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="ชื่อล็อต เช่น สติกเกอร์ใต้ฝากล่อง ก.ย."
+          />
+          <input
+            value={form.points}
+            onChange={(e) => setForm({ ...form, points: e.target.value.replace(/\D/g, '') })}
+            placeholder="แต้ม/ใบ"
+            style={{ maxWidth: 110 }}
+          />
+          <input
+            value={form.quantity}
+            onChange={(e) => setForm({ ...form, quantity: e.target.value.replace(/\D/g, '') })}
+            placeholder="จำนวนใบ"
+            style={{ maxWidth: 110 }}
+          />
+          <input
+            type="date"
+            value={form.expiresAt}
+            onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
+            style={{ maxWidth: 160 }}
+          />
+          <button className="btn primary" onClick={create} disabled={busy === 'new'}>
+            {busy === 'new' ? 'กำลังสร้าง…' : 'สร้างล็อต'}
+          </button>
+        </div>
+        <div className="page-sub" style={{ marginTop: 8 }}>
+          สร้างแล้วยัง <b>ไม่เปิดใช้</b> — พิมพ์/ส่งโรงพิมพ์ให้เสร็จ ของถึงร้านแล้วค่อยกด "เปิดใช้"
+          เพื่อไม่ให้ใครสแกนได้ระหว่างทาง (สูงสุด 2,000 ใบต่อล็อต)
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr><th>ล็อต</th><th>แต้ม/ใบ</th><th>ใช้แล้ว</th><th>สถานะ</th><th>หมดอายุ</th><th></th></tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={6} style={{ color: '#6b7280' }}>ยังไม่มีล็อต — สร้างล็อตแรกเพื่อพิมพ์สติกเกอร์</td></tr>
+              )}
+              {rows.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.name}</td>
+                  <td className="total">{b.points}</td>
+                  <td className="total">{b.usedCount} / {b.codeCount}</td>
+                  <td>
+                    <span className={`pill ${b.status === 'active' ? 'completed' : b.status === 'revoked' ? 'cancelled' : 'pending'}`}>
+                      {BATCH_STATUS_TH[b.status]}
+                    </span>
+                  </td>
+                  <td className="time">{b.expiresAt ? new Date(b.expiresAt).toLocaleDateString('th-TH') : '—'}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="btn ghost" onClick={() => printSheet(b)} disabled={!!busy}>🖨️ พิมพ์</button>
+                      <button className="btn ghost" onClick={() => exportCsv(b)} disabled={!!busy}>⬇ CSV</button>
+                      {b.status === 'draft' && (
+                        <button className="btn primary" onClick={() => setStatus(b, 'active')} disabled={!!busy}>เปิดใช้</button>
+                      )}
+                      {b.status === 'active' && (
+                        <button className="btn ghost" onClick={() => setStatus(b, 'revoked')} disabled={!!busy}>ยกเลิก</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -539,6 +539,28 @@ async function main() {
   });
   ok(crossBatch.status === 403 || crossBatch.status === 404, 'สร้างล็อตข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${crossBatch.status}`);
 
+  // US-51: ล็อตที่ถูกยกเลิก → สแกนไม่ได้ทั้งล็อต (ปุ่มหยุดฉุกเฉินเมื่อสติกเกอร์หลุด)
+  const batch2 = await req('POST', '/admin/loyalty/batches', {
+    token: adminToken, body: { brandId, name: 'E2E ล็อตที่จะยกเลิก', points: 5, quantity: 1 },
+  });
+  await req('PATCH', `/admin/loyalty/batches/${batch2.body.id}?brandId=${brandId}`, {
+    token: adminToken, body: { status: 'active' },
+  });
+  const codes2 = await req('GET', `/admin/loyalty/batches/${batch2.body.id}/codes?brandId=${brandId}`, { token: adminToken });
+  ok('url' in (codes2.body?.codes?.[0] || {}), 'codes คืนลิงก์สแกนพร้อมใช้ (US-51 เอาไปทำ QR/CSV)');
+  ok(
+    codes2.body?.batch?.liffId
+      ? String(codes2.body.codes[0].url).startsWith('https://liff.line.me/')
+      : codes2.body?.codes?.[0]?.url === null,
+    'ไม่มี LIFF ID → url เป็น null ให้ UI เตือนก่อนพิมพ์',
+    JSON.stringify(codes2.body?.batch),
+  );
+  await req('PATCH', `/admin/loyalty/batches/${batch2.body.id}?brandId=${brandId}`, {
+    token: adminToken, body: { status: 'revoked' },
+  });
+  const earnRevoked = await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes2.body.codes[0].code } });
+  ok(earnRevoked.status === 404, 'ยกเลิกล็อตแล้ว → สแกนไม่ได้ (404)', `ได้ ${earnRevoked.status}`);
+
   // US-53/54: ยืนยันด้วย "รหัสที่พิมพ์เอง" (ตัวเล็ก+มีขีด) — เส้นสำรองเมื่อกล้องสแกนไม่ติด
   await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes[2].code } }); // +10
   const rwTyped = await req('POST', '/admin/loyalty/rewards', {

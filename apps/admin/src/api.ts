@@ -571,3 +571,39 @@ export const confirmRedemption = (token: string) =>
     `/admin/loyalty/redemptions/${encodeURIComponent(token)}/confirm`,
     { method: 'POST' },
   );
+
+// ── US-51: ล็อต QR สะสมแต้ม ──
+export interface LoyaltyBatch {
+  id: string; name: string; points: number; quantity: number;
+  status: 'draft' | 'active' | 'revoked';
+  menuItemId: string | null; expiresAt: string | null; createdAt: string;
+  codeCount: number; usedCount: number;
+}
+export interface LoyaltyCode {
+  id: string; code: string; human: string; points: number;
+  status: 'active' | 'used' | 'revoked'; usedAt: string | null;
+  /** ลิงก์ที่ฝังใน QR — null เมื่อแบรนด์ยังไม่ได้ตั้ง LIFF ID (สแกนแล้วเปิดไม่ได้) */
+  url: string | null;
+}
+export interface LoyaltyCodesResult {
+  batch: { id: string; name: string; points: number; status: string; brandName: string; liffId: string | null };
+  codes: LoyaltyCode[];
+}
+
+export const listLoyaltyBatches = (brandId: string) =>
+  adminFetch<LoyaltyBatch[]>(`/admin/loyalty/batches?brandId=${encodeURIComponent(brandId)}`);
+
+export const createLoyaltyBatch = (body: {
+  brandId: string; name: string; points: number; quantity: number; expiresAt?: string;
+}) => adminFetch<LoyaltyBatch>('/admin/loyalty/batches', { method: 'POST', body: JSON.stringify(body) });
+
+export const setLoyaltyBatchStatus = (brandId: string, id: string, status: 'draft' | 'active' | 'revoked') =>
+  adminFetch<{ id: string; status: string }>(
+    `/admin/loyalty/batches/${id}?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ status }) },
+  );
+
+export const listLoyaltyCodes = (brandId: string, batchId: string) =>
+  adminFetch<LoyaltyCodesResult>(
+    `/admin/loyalty/batches/${batchId}/codes?brandId=${encodeURIComponent(brandId)}`,
+  );

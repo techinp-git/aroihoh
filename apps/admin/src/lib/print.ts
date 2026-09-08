@@ -84,3 +84,48 @@ export function riderLabelHtml(o: KitchenOrder) {
     ${collect}
   `);
 }
+
+
+// ── US-51: แผ่นสติกเกอร์ QR สะสมแต้ม (ติดใต้ฝากล่อง) ──
+// A4 กริด 5×7 = 35 ดวง/แผ่น ดวงละ 40×40mm ตรงกับสติกเกอร์ที่หาซื้อได้ทั่วไป
+// QR ต้องเป็น data URL มาแล้ว (เรียก qrcode ฝั่ง caller — ไฟล์นี้ไม่ยุ่งกับ lib ภายนอก)
+export interface StickerLabel {
+  qrDataUrl: string;
+  /** รหัสแบบมีขีด ให้คนอ่าน/พิมพ์เองได้เมื่อกล้องสแกนไม่ติด */
+  human: string;
+  points: number;
+}
+
+export function qrStickerSheetHtml(
+  labels: StickerLabel[],
+  opts: { brandName: string; batchName: string },
+) {
+  const cells = labels
+    .map(
+      (l) => `<div class="lb">
+        <img src="${l.qrDataUrl}" alt="">
+        <div class="pts">รับ ${l.points} แต้ม</div>
+        <div class="hm">${esc(l.human)}</div>
+      </div>`,
+    )
+    .join('');
+  return `<!doctype html><html><head><meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 5mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Sarabun", sans-serif; color: #000; }
+  .sheet { display: grid; grid-template-columns: repeat(5, 40mm); grid-auto-rows: 40mm; gap: 0; }
+  .lb { width: 40mm; height: 40mm; padding: 1.5mm; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; text-align: center;
+        /* เส้นบางไว้กะแนวตัด — สติกเกอร์สำเร็จรูปจะไดคัทมาแล้ว เส้นนี้ช่วยตอนตัดเอง */
+        outline: 0.1mm dashed #bbb; outline-offset: -0.05mm; break-inside: avoid; }
+  .lb img { width: 26mm; height: 26mm; display: block; }
+  .pts { font-size: 8pt; font-weight: 700; margin-top: 0.6mm; }
+  .hm { font-size: 6pt; font-family: ui-monospace, monospace; letter-spacing: 0.2px; color: #333; }
+  .hdr { font-size: 9pt; margin-bottom: 2mm; }
+</style><title>สติกเกอร์ QR สะสมแต้ม</title></head>
+<body>
+  <div class="hdr">${esc(opts.brandName)} · ${esc(opts.batchName)} · ${labels.length} ดวง</div>
+  <div class="sheet">${cells}</div>
+</body></html>`;
+}

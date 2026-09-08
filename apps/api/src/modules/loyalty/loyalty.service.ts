@@ -331,19 +331,39 @@ export class LoyaltyService {
     }));
   }
 
-  /** โค้ดทั้งล็อต — เอาไป render QR / ทำ CSV ส่งโรงพิมพ์ (US-51) */
+  /**
+   * โค้ดทั้งล็อต — เอาไป render QR / ทำ CSV ส่งโรงพิมพ์ (US-51)
+   *
+   * ประกอบลิงก์สแกนที่ server เพราะ liffId อยู่กับแบรนด์ และหน้า line-config เปิดให้แค่ owner
+   * (manager ที่สั่งพิมพ์สติกเกอร์จะดึงเองไม่ได้) · ไม่มี liffId = คืน url null ให้ UI เตือนก่อนพิมพ์
+   */
   async listCodes(admin: AdminJwt, brandId: string, batchId: string) {
     assertBrandAccess(admin, brandId);
-    const batch = await this.prisma.loyaltyQrBatch.findFirst({ where: { id: batchId, brandId } });
+    const batch = await this.prisma.loyaltyQrBatch.findFirst({
+      where: { id: batchId, brandId },
+      include: { brand: { select: { liffId: true, name: true } } },
+    });
     if (!batch) throw new NotFoundException('ไม่พบล็อตนี้');
     const codes = await this.prisma.loyaltyQrCode.findMany({
       where: { batchId, brandId },
       orderBy: { createdAt: 'asc' },
       select: { id: true, code: true, points: true, status: true, usedAt: true },
     });
+    const liffId = batch.brand.liffId || null;
     return {
-      batch: { id: batch.id, name: batch.name, points: batch.points, status: batch.status },
-      codes: codes.map((c) => ({ ...c, human: formatCodeForHuman(c.code) })),
+      batch: {
+        id: batch.id,
+        name: batch.name,
+        points: batch.points,
+        status: batch.status,
+        brandName: batch.brand.name,
+        liffId, // null = ยังไม่ตั้ง LIFF ID → พิมพ์ไปลูกค้าสแกนแล้วเปิดไม่ได้
+      },
+      codes: codes.map((c) => ({
+        ...c,
+        human: formatCodeForHuman(c.code),
+        url: liffId ? `https://liff.line.me/${liffId}?e=${c.code}` : null,
+      })),
     };
   }
 
