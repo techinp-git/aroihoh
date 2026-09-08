@@ -4,23 +4,21 @@
  * ระยะเวลาอยู่ใน src/modules/pdpa/retention.ts (12 เดือน / 12 เดือน / 5 ปี)
  * ⚠️ ต้องตรงกับที่เขียนใน docs/pdpa/privacy-policy.md เสมอ
  *
- * รัน (ในคอนเทนเนอร์ api):
+ * รัน (ในคอนเทนเนอร์ api — ใช้ไฟล์ที่ build แล้ว ไม่ต้องมี ts-node):
  *   ดูก่อนว่าจะแตะอะไร (ไม่แก้อะไรเลย):
- *     npx ts-node -O '{"module":"commonjs"}' prisma/pdpa-retention.ts
+ *     node dist/modules/pdpa/retention.cli.js
  *   ลบจริง:
- *     npx ts-node -O '{"module":"commonjs"}' prisma/pdpa-retention.ts --apply
+ *     node dist/modules/pdpa/retention.cli.js --apply
  *
  * ค่าเริ่มต้นคือ dry-run เสมอ — สคริปต์นี้ลบข้อมูลลูกค้าจริง ต้องตั้งใจถึงจะทำงาน
+ *
+ * ⚠️ อยู่ใน src/ ไม่ใช่ prisma/ โดยตั้งใจ — image ของ prod copy มาแค่ `dist`
+ * สคริปต์ใน prisma/ ที่ import จาก src/ จะพังตอนรันในคอนเทนเนอร์ (เคยเจอกับ rotate-encryption-key)
  */
 import { PrismaClient } from '@prisma/client';
 import { readdir, unlink } from 'fs/promises';
 import { join } from 'path';
-import {
-  ANONYMIZED_NAME,
-  cutoffs,
-  describePlan,
-  detachedLineUserId,
-} from '../src/modules/pdpa/retention';
+import { ANONYMIZED_NAME, cutoffs, describePlan, detachedLineUserId } from './retention';
 
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes('--apply');
