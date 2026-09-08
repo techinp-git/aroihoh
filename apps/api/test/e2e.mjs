@@ -719,12 +719,19 @@ async function main() {
   });
   ok(notEnough.status === 422, 'แต้มไม่พอแต่ขอส่วนลด → 422 ไม่สร้างออเดอร์', `ได้ ${notEnough.status}`);
 
-  // audience rule "แต้ม ≥ N" (US-57)
+  // audience rule "แต้ม ≥ N" (US-57) — ต้องยินยอมรับข่าวสารก่อน ไม่งั้นถูกตัดออกตั้งแต่ต้น (PDPA)
+  const earnerAdmin = ((await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken })).body || [])
+    .find((c) => c.lineUserId === 'Udev-' + earnerLogin.body.customer.displayName.toLowerCase());
+  if (earnerAdmin) {
+    await req('PATCH', `/admin/customers/${earnerAdmin.id}/opt-out?brandId=${brandId}`, {
+      token: adminToken, body: { optedOut: false },
+    });
+  }
   const ptsAudience = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
     token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 1 }] } },
   });
   ok(is2xx(ptsAudience.status) && ptsAudience.body?.audienceCount >= 1,
-    'audience rule แต้ม ≥ 1 หาลูกค้าเจอ', JSON.stringify(ptsAudience.body));
+    'audience rule แต้ม ≥ 1 หาลูกค้าเจอ (ต้องยินยอมรับข่าวสารด้วย)', JSON.stringify(ptsAudience.body));
   const ptsHuge = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
     token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 9999999 }] } },
   });
@@ -822,6 +829,14 @@ async function main() {
   ok(resume.status === 200 && resume.body?.isOpen === true, 'เปิดร้านคืน');
 
   // 16) US-31 LINE broadcast + PDPA opt-out
+  // PDPA ม.19: ตั้งแต่เปลี่ยนเป็น opt-in ลูกค้าต้องยินยอมก่อนถึงจะถูกนับเป็นผู้รับ
+  // DB ใหม่ (CI) ทุกคนยังไม่เคยยินยอม → ต้องบันทึกความยินยอมให้ก่อน ไม่งั้นกลุ่มผู้รับว่างเปล่า
+  const allCust = await req('GET', `/admin/customers?brandId=${brandId}`, { token: adminToken });
+  for (const c of allCust.body || []) {
+    await req('PATCH', `/admin/customers/${c.id}/opt-out?brandId=${brandId}`, {
+      token: adminToken, body: { optedOut: false },
+    });
+  }
   const prev0 = await req('POST', `/admin/broadcasts/preview?brandId=${brandId}`, { token: adminToken, body: {} });
   ok(is2xx(prev0.status) && typeof prev0.body?.audienceCount === 'number', 'broadcast preview (reach)', JSON.stringify(prev0.body));
   const baseAudience = prev0.body.audienceCount;
