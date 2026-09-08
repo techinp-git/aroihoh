@@ -7,7 +7,14 @@
 
 import type { OrderStatus } from '@aroihoh/shared';
 
-export type NotifyKind = 'order_confirm' | 'status_push' | 'points_earned';
+/**
+ * ชนิดการแจ้งเตือนทั้งหมด — เป็น "แหล่งเดียว" ที่ทั้ง type และ isValidJob() อ่านร่วมกัน
+ * ห้ามแยกรายชื่อไปเขียนซ้ำที่อื่น: เคยเพิ่ม points_earned เข้า type แล้วลืมแก้ตัวตรวจ
+ * → worker โยน job ทิ้งเป็น "invalid payload" เฉพาะบน prod (dev/CI ไม่มี Redis เลยวิ่ง inline ที่ข้ามตัวตรวจ)
+ */
+export const NOTIFY_KINDS = ['order_confirm', 'status_push', 'points_earned'] as const;
+
+export type NotifyKind = (typeof NOTIFY_KINDS)[number];
 
 /**
  * dedupeKey — unique ใน message_logs (กันแถวซ้ำที่ระดับ DB ไม่ใช่แค่ระดับแอป)
@@ -59,7 +66,7 @@ export function isValidJob(job: unknown): job is NotifyJob {
   if (!job || typeof job !== 'object') return false;
   const j = job as Record<string, unknown>;
   return (
-    (j.kind === 'order_confirm' || j.kind === 'status_push') &&
+    (NOTIFY_KINDS as readonly string[]).includes(j.kind as string) &&
     typeof j.brandId === 'string' &&
     typeof j.orderId === 'string' &&
     typeof j.messageLogId === 'string'
