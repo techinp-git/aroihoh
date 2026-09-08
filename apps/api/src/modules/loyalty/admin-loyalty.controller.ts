@@ -5,7 +5,7 @@ import {
   BatchStatusDto,
   CreateBatchDto,
   CreateRewardDto,
-  DailyCapDto,
+  LoyaltySettingsDto,
   UpdateRewardDto,
 } from './dto/loyalty.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
@@ -106,12 +106,12 @@ export class AdminLoyaltyController {
 
   @Patch('settings')
   @Roles('owner')
-  setDailyCap(
+  setSettings(
     @CurrentAdmin() admin: AdminJwt,
     @Query('brandId') brandId: string,
-    @Body() dto: DailyCapDto,
+    @Body() dto: LoyaltySettingsDto,
   ) {
-    return this.loyalty.setDailyCap(admin, brandId, dto.dailyEarnCap ?? null);
+    return this.loyalty.setSettings(admin, brandId, dto);
   }
 
   // คนขายสแกนคูปอง — brandId มาจากตัวคูปอง ไม่รับจาก client (กันข้ามแบรนด์)

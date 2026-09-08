@@ -55,6 +55,12 @@ export class CreateOrderDto {
   /** ติ๊ก "บันทึกที่อยู่นี้ไว้" ตอนเช็คเอาต์ — ใช้ได้กับ deliveryAddress เท่านั้น */
   @IsOptional() @IsBoolean() saveAddress?: boolean;
 
+  /**
+   * US-57: ใช้แต้มแลกส่วนลดกับออเดอร์นี้ (เฉพาะรางวัลชนิดส่วนลดเงิน)
+   * ยอดส่วนลดคิดจาก DB ฝั่ง server เท่านั้น — client ส่งมาได้แค่ "จะใช้รางวัลไหน"
+   */
+  @IsOptional() @IsString() @IsNotEmpty() loyaltyRewardId?: string;
+
   @IsIn(['promptpay', 'cod'])
   paymentMethod: 'promptpay' | 'cod';
 

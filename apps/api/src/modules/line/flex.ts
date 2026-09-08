@@ -186,3 +186,82 @@ export function shouldNotify(status: OrderStatus): boolean {
 export function isKnownStatus(s: string): s is OrderStatus {
   return s === 'cancelled' || (ORDER_STATUS_FLOW as readonly string[]).includes(s);
 }
+
+
+/**
+ * US-56: การ์ดแจ้ง "ได้แต้มแล้ว" หลังออเดอร์ส่งสำเร็จ
+ * โชว์แต้มที่เพิ่งได้ + ยอดรวม และปุ่มเปิดแท็บแต้มใน LIFF (ถ้ามี liffId)
+ */
+export function buildPointsEarnedFlex(opts: {
+  brandName: string;
+  primaryColor?: string | null;
+  liffId?: string | null;
+  points: number;
+  balance: number;
+  nextRewardText?: string | null;
+}) {
+  const color = opts.primaryColor || '#e8734a';
+  const body: Record<string, unknown>[] = [
+    { type: 'text', text: `+${opts.points}`, size: '4xl', weight: 'bold', color, align: 'center' },
+    { type: 'text', text: 'แต้มสะสม', size: 'sm', color: '#8c8c8c', align: 'center' },
+    { type: 'separator', margin: 'lg' },
+    {
+      type: 'box',
+      layout: 'horizontal',
+      margin: 'lg',
+      contents: [
+        { type: 'text', text: 'แต้มทั้งหมด', size: 'sm', color: '#555555' },
+        { type: 'text', text: String(opts.balance), size: 'sm', align: 'end', weight: 'bold' },
+      ],
+    },
+  ];
+  if (opts.nextRewardText) {
+    body.push({
+      type: 'text',
+      text: opts.nextRewardText,
+      size: 'xs',
+      color: '#8c8c8c',
+      margin: 'md',
+      wrap: true,
+    });
+  }
+
+  const footer = opts.liffId
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color,
+            action: {
+              type: 'uri',
+              label: 'ดูแต้มของฉัน',
+              uri: `https://liff.line.me/${opts.liffId}?view=points`,
+            },
+          },
+        ],
+      }
+    : undefined;
+
+  return {
+    type: 'bubble',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: color,
+      paddingAll: 'md',
+      contents: [
+        { type: 'text', text: 'ขอบคุณที่อุดหนุน 🎯', color: '#ffffff', weight: 'bold', size: 'sm' },
+        { type: 'text', text: opts.brandName, color: '#ffffff', size: 'xs' },
+      ],
+    },
+    body: { type: 'box', layout: 'vertical', contents: body },
+    ...(footer ? { footer } : {}),
+  };
+}
+
+export function pointsEarnedAltText(points: number, balance: number): string {
+  return `ได้ ${points} แต้มจากออเดอร์ล่าสุด · แต้มสะสมทั้งหมด ${balance}`.slice(0, 400);
+}

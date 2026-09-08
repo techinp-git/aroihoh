@@ -16,6 +16,7 @@ import {
   getLoyaltyMe,
   earnPoints,
   createRedemption,
+  getRewards,
   getDeliveryOrigin,
   checkDelivery,
   createOrder,
@@ -31,6 +32,7 @@ import {
   type SavedAddress,
   type LoyaltyMe,
   type PendingRedemption,
+  type Reward,
   type CreateOrderBody,
 } from './api';
 import AddressPicker from './AddressPicker';
@@ -117,6 +119,9 @@ export default function App() {
   const [pickedId, setPickedId] = useState<string | null>(null); // หมุดในสมุดที่เลือกอยู่
   const [saveAddr, setSaveAddr] = useState(false);
   const [saveLabel, setSaveLabel] = useState('บ้าน'); // ป้ายของหมุดที่กดบันทึกตอนเช็คเอาต์
+  // US-57: ส่วนลดจากแต้มที่เลือกใช้กับออเดอร์นี้
+  const [discountRewards, setDiscountRewards] = useState<Reward[]>([]);
+  const [usedReward, setUsedReward] = useState<Reward | null>(null);
   const [origin, setOrigin] = useState<DeliveryOrigin | null>(null);
   const [zone, setZone] = useState<DeliveryCheck | null>(null);
   const [checking, setChecking] = useState(false);
@@ -210,6 +215,11 @@ export default function App() {
   const count = lines.reduce((a, l) => a + l.qty, 0);
   const subtotal = lines.reduce((a, l) => a + l.item.price * l.qty, 0);
   const savedAddrs = profile?.addresses ?? [];
+  // ยอดที่โชว์ตอนเช็คเอาต์ — ส่วนลดจริงคิดฝั่ง server อีกครั้ง (กติกาเหล็ก #2)
+  const previewDiscount = usedReward?.discountAmount != null
+    ? Math.min(usedReward.discountAmount, subtotal)
+    : 0;
+  const checkoutTotal = subtotal - previewDiscount + (zone?.deliveryFee ?? 0);
 
   const setQty = (item: MenuItem, qty: number) =>
     setCart((c) => ({ ...c, [item.id]: { item, qty: Math.max(0, qty) } }));
@@ -243,6 +253,14 @@ export default function App() {
       ?? savedAddrs.find((a) => a.deliverable !== false);
     if (preferred) pickSaved(preferred);
   }, [view, savedAddrs.length]);
+
+  // US-57: โหลดรางวัลชนิดส่วนลดที่แต้มถึงแล้ว เมื่อเข้าหน้าเช็คเอาต์
+  useEffect(() => {
+    if (view !== 'checkout' || tab !== 'order' || !profile?.loyalty) return;
+    getRewards()
+      .then((r) => setDiscountRewards(r.rewards.filter((x) => x.type === 'discount' && x.affordable)))
+      .catch(() => setDiscountRewards([]));
+  }, [view, tab, profile?.loyalty?.balance]);
 
   // ขยับหมุดแล้วเช็คระยะ/ค่าส่งให้อัตโนมัติ — หน่วงไว้ ไม่ให้ยิงทุกพิกเซลตอนลาก
   // ผลที่ได้เป็นแค่ UX ตอนยืนยันออเดอร์ server เช็คซ้ำเองเสมอ (#5)
@@ -286,6 +304,7 @@ export default function App() {
         items: lines.map((l) => ({ menuItemId: l.item.id, qty: l.qty })),
         paymentMethod: 'cod' as const,
         note: note || undefined,
+        ...(usedReward ? { loyaltyRewardId: usedReward.id } : {}),
       };
       const body: CreateOrderBody = pickedId
         ? { ...base, savedAddressId: pickedId }
@@ -310,6 +329,11 @@ export default function App() {
       // เพิ่งบันทึกหมุดใหม่เข้าสมุด → ดึงโปรไฟล์ใหม่ให้ลิสต์ตรง
       if (!pickedId && saveAddr) getProfile().then(setProfile).catch(() => {});
       setSaveAddr(false);
+      // ใช้แต้มไปแล้ว → ยอดแต้มเปลี่ยน ต้องดึงใหม่ ไม่งั้นการ์ดแต้มค้างเลขเก่า
+      if (usedReward) {
+        setUsedReward(null);
+        getProfile().then(setProfile).catch(() => {});
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -561,12 +585,41 @@ export default function App() {
               )}
             </div>
 
+            {/* US-57: ใช้แต้มเป็นส่วนลด — โชว์เฉพาะรางวัลชนิดส่วนลดที่แต้มถึงแล้ว */}
+            {discountRewards.length > 0 && (
+              <div className="card">
+                <h3>ใช้แต้มเป็นส่วนลด</h3>
+                <div className="chiprow">
+                  {discountRewards.map((r) => (
+                    <button
+                      key={r.id}
+                      className={'chip' + (usedReward?.id === r.id ? ' on' : '')}
+                      onClick={() => setUsedReward(usedReward?.id === r.id ? null : r)}
+                    >
+                      🎁 {r.name} · {r.pointsCost} แต้ม
+                    </button>
+                  ))}
+                </div>
+                {usedReward && (
+                  <div className="picker-note">
+                    ใช้ {usedReward.pointsCost} แต้มกับออเดอร์นี้ · ส่วนลดจริงคิดจากร้านตอนยืนยัน
+                  </div>
+                )}
+              </div>
+            )}
+
             {zone?.inZone && (
               <div className="card">
                 <h3>สรุปรายการ</h3>
                 <div className="line"><span>ค่าอาหาร</span><span>{baht(subtotal)}</span></div>
+                {usedReward?.discountAmount != null && (
+                  <div className="line" style={{ color: 'var(--green)' }}>
+                    <span>ส่วนลดจากแต้ม</span>
+                    <span>-{baht(Math.min(usedReward.discountAmount, subtotal))}</span>
+                  </div>
+                )}
                 <div className="line"><span>ค่าส่ง</span><span>{baht(zone.deliveryFee ?? 0)}</span></div>
-                <div className="line total"><span>รวมทั้งหมด</span><span>{baht(subtotal + (zone.deliveryFee ?? 0))}</span></div>
+                <div className="line total"><span>รวมทั้งหมด</span><span>{baht(checkoutTotal)}</span></div>
                 <div className="line"><span>ชำระเงิน</span><span>เก็บเงินปลายทาง (COD)</span></div>
               </div>
             )}
@@ -582,6 +635,11 @@ export default function App() {
               <div className="oid">เลขออเดอร์ #{order.id.slice(0, 8)}</div>
             </div>
             <div className="card">
+              {order.discount > 0 && (
+                <div className="line" style={{ color: 'var(--green)' }}>
+                  <span>ส่วนลดจากแต้ม</span><span>-{baht(order.discount)}</span>
+                </div>
+              )}
               <div className="line total"><span>ยอดรวม</span><span>{baht(order.total)}</span></div>
               <div className="line"><span>ชำระ</span><span>เก็บเงินปลายทาง</span></div>
             </div>
@@ -631,7 +689,7 @@ export default function App() {
         {!earnOutcome && inOrderTab && view === 'checkout' && (
           <div className="cartbar">
             <button className="btn primary" onClick={place} disabled={!zone?.inZone || placing}>
-              {placing ? <div className="spinner" /> : `ยืนยันสั่ง · ${baht(subtotal + (zone?.deliveryFee ?? 0))}`}
+              {placing ? <div className="spinner" /> : `ยืนยันสั่ง · ${baht(checkoutTotal)}`}
             </button>
           </div>
         )}

@@ -1,4 +1,5 @@
 import {
+  matchesCriterion,
   matchesAudience,
   resolveAudienceByRules,
   validateRules,
@@ -114,5 +115,34 @@ describe('resolveAudienceByRules + validateRules', () => {
     expect(() => validateRules({ match: 'x', criteria: [] })).toThrow();
     expect(() => validateRules({ match: 'all', criteria: [{ type: 'lapsed', inactiveDays: 0, lookbackDays: 5 }] })).toThrow();
     expect(() => validateRules({ match: 'all', criteria: [{ type: 'tenure_min_days', days: 365 }] })).not.toThrow();
+  });
+});
+
+describe('เกณฑ์ points_min (US-57)', () => {
+  const base = {
+    id: 'c1',
+    createdAt: new Date('2026-01-01'),
+    tags: [],
+    marketingOptedOut: false,
+    orders: [],
+  };
+  const now = new Date('2026-09-08').getTime();
+
+  it('แต้มถึงเกณฑ์ = เข้ากลุ่ม', () => {
+    expect(matchesCriterion({ type: 'points_min', points: 100 }, { ...base, pointsBalance: 100 }, now)).toBe(true);
+    expect(matchesCriterion({ type: 'points_min', points: 100 }, { ...base, pointsBalance: 250 }, now)).toBe(true);
+  });
+
+  it('แต้มไม่ถึง = ไม่เข้ากลุ่ม', () => {
+    expect(matchesCriterion({ type: 'points_min', points: 100 }, { ...base, pointsBalance: 99 }, now)).toBe(false);
+  });
+
+  it('ลูกค้าที่ไม่มีข้อมูลแต้ม = ถือว่า 0', () => {
+    expect(matchesCriterion({ type: 'points_min', points: 1 }, base, now)).toBe(false);
+  });
+
+  it('validateRules: points ต้อง ≥ 1', () => {
+    expect(() => validateRules({ match: 'all', criteria: [{ type: 'points_min', points: 0 }] })).toThrow();
+    expect(() => validateRules({ match: 'all', criteria: [{ type: 'points_min', points: 50 }] })).not.toThrow();
   });
 });

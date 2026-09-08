@@ -10,6 +10,8 @@ export interface AudienceCustomer {
   tags: string[];
   marketingOptedOut: boolean;
   orders: { createdAt: Date | string }[];
+  /** US-57: แต้มคงเหลือ (ไม่มี = ถือว่า 0) */
+  pointsBalance?: number;
 }
 
 /** ประเภทเกณฑ์ที่รองรับ — ปิด (bounded) เพื่อความปลอดภัย + ทดสอบได้ */
@@ -17,7 +19,8 @@ export type Criterion =
   | { type: 'tenure_min_days'; days: number } // เป็นสมาชิกมาแล้วอย่างน้อย N วัน (เช่น เกิน 1 ปี = 365)
   | { type: 'order_count_in_window'; windowDays: number; minCount: number } // สั่ง ≥ N ครั้งใน X วันล่าสุด
   | { type: 'lapsed'; inactiveDays: number; lookbackDays: number } // หายไป: ไม่สั่งใน inactiveDays แต่เคยสั่งใน lookbackDays ก่อนหน้า
-  | { type: 'tags'; tags: string[] }; // มีแท็กตรงอย่างน้อย 1
+  | { type: 'tags'; tags: string[] } // มีแท็กตรงอย่างน้อย 1
+  | { type: 'points_min'; points: number }; // US-57: มีแต้มสะสม ≥ N (ชวนมาแลกของรางวัล)
 
 export interface AudienceRules {
   match: 'all' | 'any'; // AND / OR ระหว่างเกณฑ์
@@ -56,6 +59,9 @@ export function matchesCriterion(c: Criterion, cust: AudienceCustomer, nowMs: nu
       if (wanted.length === 0) return true;
       return cust.tags.some((t) => wanted.includes(t));
     }
+
+    case 'points_min':
+      return (cust.pointsBalance ?? 0) >= c.points;
 
     default:
       return false;
@@ -121,6 +127,9 @@ export function validateRules(rules: unknown): AudienceRules {
         break;
       case 'tags':
         if (!Array.isArray(c.tags)) throw new Error('tags ต้องเป็น array');
+        break;
+      case 'points_min':
+        if (!(c.points >= 1)) throw new Error('points_min.points ต้อง ≥ 1');
         break;
       default:
         throw new Error(`ไม่รู้จักเกณฑ์: ${(c as { type: string }).type}`);

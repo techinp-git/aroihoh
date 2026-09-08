@@ -52,7 +52,9 @@ export class AdjustPointsDto {
   @IsString() @IsNotEmpty() @MaxLength(200) note: string;
 }
 
-/** US-55: เพดานสแกนต่อวันของแบรนด์ (0/ไม่ส่ง = กลับไปใช้ค่าเริ่มต้น) */
-export class DailyCapDto {
+/** US-55/56: ตั้งค่าสะสมแต้มของแบรนด์ (0 = ปิด/กลับค่าเริ่มต้น) */
+export class LoyaltySettingsDto {
   @IsOptional() @IsInt() @Min(0) @Max(1000) dailyEarnCap?: number;
+  /** ทุกกี่บาทได้ 1 แต้มเมื่อออเดอร์ส่งสำเร็จ — 0 = ปิดการให้แต้มอัตโนมัติ */
+  @IsOptional() @IsInt() @Min(0) @Max(100000) bahtPerPoint?: number;
 }

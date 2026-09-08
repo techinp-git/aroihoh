@@ -14,7 +14,14 @@ import { Prisma } from '@prisma/client';
 import type { OrderStatus } from '@aroihoh/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from '../line/line.client';
-import { buildOrderConfirmFlex, orderConfirmAltText, statusUpdateText, shouldNotify } from '../line/flex';
+import {
+  buildOrderConfirmFlex,
+  buildPointsEarnedFlex,
+  orderConfirmAltText,
+  pointsEarnedAltText,
+  statusUpdateText,
+  shouldNotify,
+} from '../line/flex';
 import { buildDedupeKey, isValidJob, type NotifyJob, type NotifyKind } from './dedupe';
 
 const QUEUE_NAME = 'line-notify';
@@ -90,7 +97,7 @@ export class NotificationsService implements OnModuleDestroy {
           brandId,
           customerId,
           orderId,
-          type: kind === 'order_confirm' ? 'flex_confirm' : 'status_push',
+          type: kind === 'status_push' ? 'status_push' : 'flex_confirm',
           dedupeKey,
           status: 'queued',
         },
@@ -164,6 +171,35 @@ export class NotificationsService implements OnModuleDestroy {
       );
       if (r.skipped) return this.unreserve(job.messageLogId);
       ok = r.ok;
+    } else if (job.kind === 'points_earned') {
+      // US-56: อ่านแต้มจาก ledger ของออเดอร์นี้ (ไม่คำนวณซ้ำ — ตัวเลขต้องตรงกับที่ลงบัญชีจริง)
+      const entry = await this.prisma.loyaltyTransaction.findFirst({
+        where: { brandId: job.brandId, refType: 'order', refId: order.id, type: 'earn' },
+        select: { points: true, customerId: true },
+      });
+      if (!entry) {
+        await this.markFailed(job.messageLogId, 'no loyalty entry for order');
+        return { sent: false };
+      }
+      const cust = await this.prisma.customer.findUnique({
+        where: { id: entry.customerId },
+        select: { pointsBalance: true },
+      });
+      const bubble = buildPointsEarnedFlex({
+        brandName: order.brand.name,
+        liffId: order.brand.liffId,
+        primaryColor: theme?.primaryColor,
+        points: entry.points,
+        balance: cust?.pointsBalance ?? entry.points,
+      });
+      const r = await this.line.pushFlex(
+        job.brandId,
+        order.customer.lineUserId,
+        pointsEarnedAltText(entry.points, cust?.pointsBalance ?? entry.points),
+        bubble,
+      );
+      if (r.skipped) return this.unreserve(job.messageLogId);
+      ok = r.ok;
     } else {
       const text = statusUpdateText({ id: order.id, status: order.status as OrderStatus }, order.brand.name);
       const r = await this.line.pushText(job.brandId, order.customer.lineUserId, text);
@@ -205,6 +241,11 @@ export class NotificationsService implements OnModuleDestroy {
   async notifyStatusChanged(brandId: string, orderId: string, customerId: string, status: OrderStatus) {
     if (!shouldNotify(status)) return { queued: false, skipped: true };
     return this.enqueue('status_push', brandId, orderId, customerId, status);
+  }
+
+  /** US-56: แจ้งลูกค้าว่าได้แต้มจากออเดอร์ที่ส่งสำเร็จ (1 ออเดอร์ = 1 ครั้ง) */
+  async notifyPointsEarned(brandId: string, orderId: string, customerId: string) {
+    return this.enqueue('points_earned', brandId, orderId, customerId);
   }
 
   /** สถานะคิว — ให้ admin ดูว่ามีงานค้าง/ล้มเหลวเท่าไร */

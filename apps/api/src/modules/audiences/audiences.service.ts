@@ -25,6 +25,7 @@ export class AudiencesService {
         createdAt: true,
         tags: true,
         marketingOptedOut: true,
+        pointsBalance: true, // US-57: เกณฑ์ "แต้ม ≥ N"
         orders: { select: { createdAt: true } },
       },
     });

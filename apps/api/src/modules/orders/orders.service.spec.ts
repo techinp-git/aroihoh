@@ -33,6 +33,8 @@ function makeService(overrides: {
     brand: {
       findUnique: jest.fn().mockResolvedValue({ codEnabled: true }),
     },
+    // create ห่อใน $transaction (US-57) — mock ให้เรียก callback ด้วย tx = prisma ตัวเดียวกัน
+    $transaction: jest.fn().mockImplementation((cb: any) => cb(prisma)),
     // US-58: สมุดที่อยู่
     address: {
       findFirst: jest.fn().mockResolvedValue(overrides.savedAddress ?? null),
@@ -50,8 +52,21 @@ function makeService(overrides: {
   const notify: any = {
     notifyOrderConfirmed: jest.fn().mockResolvedValue({ queued: true }),
     notifyStatusChanged: jest.fn().mockResolvedValue({ queued: true }),
+    notifyPointsEarned: jest.fn().mockResolvedValue({ queued: true }),
   };
-  return { service: new OrdersService(prisma, delivery, events, notify), prisma, delivery, notify };
+  // US-56/57: สะสมแต้ม — ไม่ได้เปิดใช้ในเทสต์ชุดนี้ (คืน 0 แต้ม / ไม่มีส่วนลด)
+  const loyalty: any = {
+    awardForOrder: jest.fn().mockResolvedValue(0),
+    planRewardDiscount: jest.fn(),
+    consumeRewardForOrder: jest.fn(),
+  };
+  return {
+    service: new OrdersService(prisma, delivery, events, notify, loyalty),
+    prisma,
+    delivery,
+    notify,
+    loyalty,
+  };
 }
 
 const customer = { sub: 'cust-1', brandId: 'brand-1' };

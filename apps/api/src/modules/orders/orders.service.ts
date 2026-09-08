@@ -13,6 +13,7 @@ import { computeOrderPricing } from './pricing';
 import { canTransition } from './status';
 import { OrderEventsService } from './order-events.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { canAddSavedAddress, normalizeLabel } from '../profile/address-book';
 
@@ -34,6 +35,7 @@ export class OrdersService {
     private readonly delivery: DeliveryService,
     private readonly events: OrderEventsService,
     private readonly notify: NotificationsService,
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   private readonly orderInclude = { items: true } satisfies Prisma.OrderInclude;
@@ -171,12 +173,24 @@ export class OrdersService {
       };
     });
 
-    // 4) คิดยอดฝั่ง server
-    const pricing = computeOrderPricing(orderItems, deliveryFee, 0);
+    // 4) US-57: ใช้แต้มเป็นส่วนลด (ถ้าเลือกมา) — ตรวจก่อน ยังไม่ตัดแต้ม
+    const subtotalBefore = orderItems.reduce((a, i) => a + i.lineTotal, 0);
+    const discountPlan = dto.loyaltyRewardId
+      ? await this.loyalty.planRewardDiscount(
+          { customerId, brandId },
+          dto.loyaltyRewardId,
+          subtotalBefore,
+        )
+      : null;
 
-    // 5) เขียน order + address + items แบบ atomic (nested create). กัน race ที่ idempotencyKey ด้วย unique
+    // 5) คิดยอดฝั่ง server (ส่วนลดมาจาก server เท่านั้น ไม่เชื่อค่าจาก client)
+    const pricing = computeOrderPricing(orderItems, deliveryFee, discountPlan?.discount ?? 0);
+
+    // 6) เขียน order + address + items แบบ atomic (nested create). กัน race ที่ idempotencyKey ด้วย unique
+    //    ถ้าใช้แต้มเป็นส่วนลด ต้องตัดแต้มใน transaction เดียวกัน — ออเดอร์สำเร็จแต่แต้มไม่ถูกตัด (หรือกลับกัน) ไม่ได้
     try {
-      const created = await this.prisma.order.create({
+      const created = await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
         data: {
           brand: { connect: { id: brandId } },
           kitchen: { connect: { id: quote.kitchenId } },
@@ -206,6 +220,11 @@ export class OrdersService {
           items: { create: orderItems },
         },
         include: this.orderInclude,
+        });
+        if (discountPlan) {
+          await this.loyalty.consumeRewardForOrder(tx, { customerId, brandId }, discountPlan, order.id);
+        }
+        return order;
       });
       // US-11: push realtime ให้ admin
       this.events.emit({
@@ -302,12 +321,24 @@ export class OrdersService {
       throw new BadRequestException('การยกเลิกต้องระบุเหตุผล');
     }
 
+    let pointsAwarded = 0;
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.order.update({
         where: { id: orderId },
         data: { status: to, ...(to === 'cancelled' ? { cancelReason: reason } : {}) },
         include: this.orderInclude,
       });
+      // US-56: ส่งสำเร็จ = ให้แต้ม ใน transaction เดียวกัน
+      // (ไม่ทำแบบ fire-and-forget เพราะ "ส่งของแล้วแต้มหาย" คือเรื่องที่ลูกค้าทวงจริง)
+      if (to === 'completed') {
+        pointsAwarded = await this.loyalty.awardForOrder(tx, {
+          brandId,
+          customerId: order.customerId,
+          orderId,
+          subtotal: order.subtotal,
+          discount: order.discount,
+        });
+      }
       await tx.auditLog.create({
         data: {
           brandId,
@@ -328,6 +359,12 @@ export class OrdersService {
     void this.notify
       .notifyStatusChanged(brandId, orderId, order.customerId, to)
       .catch(() => undefined);
-    return updated;
+    // US-56: บอกลูกค้าว่าได้แต้ม — push พังต้องไม่ทำให้การเปลี่ยนสถานะพัง (แต้มลง DB ไปแล้ว)
+    if (pointsAwarded > 0) {
+      void this.notify
+        .notifyPointsEarned(brandId, orderId, order.customerId)
+        .catch(() => undefined);
+    }
+    return { ...updated, pointsAwarded };
   }
 }

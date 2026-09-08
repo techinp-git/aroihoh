@@ -114,6 +114,10 @@ export default function Audiences({ brandId }: { brandId: string }) {
                       <input type="number" min="1" value={c.inactiveDays} onChange={(e) => patchCriterion(i, { inactiveDays: +e.target.value })} style={{ width: 60 }} /> วัน · เคยสั่งใน
                       <input type="number" min="1" value={c.lookbackDays} onChange={(e) => patchCriterion(i, { lookbackDays: +e.target.value })} style={{ width: 60 }} /> วันก่อน</span>
                   )}
+                  {c.type === 'points_min' && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>มีแต้มสะสม ≥
+                      <input type="number" min="1" value={c.points} onChange={(e) => patchCriterion(i, { points: +e.target.value })} style={{ width: 90 }} /> แต้ม</span>
+                  )}
                   {c.type === 'tags' && (
                     <div style={{ flex: 1, minWidth: 160, display: 'grid', gap: 6 }}>
                       {/* คลิกเลือกจากแท็กที่มีอยู่จริง (เข้าเงื่อนไข = มีแท็กใดแท็กหนึ่งที่เลือก) */}

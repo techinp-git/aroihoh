@@ -126,3 +126,21 @@ export function summarizeDaily(rows: LedgerRow[]): DailyPoints[] {
   }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
+
+/**
+ * US-56: ออเดอร์นี้ได้กี่แต้ม
+ *
+ * ฐานคิดคือ "เงินค่าอาหารที่ลูกค้าจ่ายจริง" = subtotal − discount
+ *  - ไม่รวมค่าส่ง เพราะเงินก้อนนั้นไปที่ไรเดอร์ ไม่ใช่รายได้ร้าน
+ *  - หักส่วนลดออก เพราะส่วนลดที่มาจากการแลกแต้มอยู่แล้ว ไม่ควรวนกลับมาเป็นแต้มอีก
+ * ปัดลงเสมอ · ไม่ได้ตั้งอัตรา (null/0) = ไม่ให้แต้ม
+ */
+export function pointsForOrder(
+  subtotalSatang: number,
+  discountSatang: number,
+  bahtPerPoint: number | null | undefined,
+): number {
+  if (!bahtPerPoint || bahtPerPoint <= 0) return 0;
+  const paidBaht = Math.max(0, subtotalSatang - discountSatang) / 100;
+  return Math.floor(paidBaht / bahtPerPoint);
+}

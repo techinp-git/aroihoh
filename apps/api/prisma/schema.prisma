@@ -56,6 +56,9 @@ model Brand {
   /// US-55: สแกน QR สะสมแต้มได้กี่ใบต่อวันต่อลูกค้า 1 คน (null = ใช้ค่าเริ่มต้นในโค้ด)
   loyaltyDailyEarnCap Int?
 
+  /// US-56: ทุกกี่บาทได้ 1 แต้ม เมื่อออเดอร์ส่งสำเร็จ (null = ปิด ไม่ให้แต้มอัตโนมัติ)
+  loyaltyBahtPerPoint Int?
+
   // LINE credentials (SETUP-1) — secret/token ต้องเข้ารหัสก่อนเก็บ (US-25 cross-tenant isolation)
   lineChannelId        String? // Messaging API channel — ส่ง/รับข้อความ
   lineChannelSecretEnc String?

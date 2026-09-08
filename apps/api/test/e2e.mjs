@@ -638,6 +638,99 @@ async function main() {
   const repCust = await req('GET', `/admin/loyalty/report?brandId=${brandId}`, { token: custToken });
   ok(repCust.status === 401 || repCust.status === 403, 'customer JWT เข้ารายงานแต้มไม่ได้', `ได้ ${repCust.status}`);
 
+  // US-56: ให้แต้มอัตโนมัติเมื่อออเดอร์ส่งสำเร็จ
+  const setRate = await req('PATCH', `/admin/loyalty/settings?brandId=${brandId}`, {
+    token: adminToken, body: { bahtPerPoint: 20 },
+  });
+  ok(is2xx(setRate.status) && setRate.body?.bahtPerPoint === 20, 'ตั้งอัตรา 20 บาท = 1 แต้ม');
+
+  const earnerLogin = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-earner-' + uuid() } });
+  const earnerTok = earnerLogin.body?.accessToken;
+  const earnOrder = await req('POST', '/orders', {
+    token: earnerTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 2 }],
+      deliveryAddress: { detail: 'ทดสอบแต้มจากออเดอร์', ...IN_ZONE },
+      paymentMethod: 'cod',
+    },
+  });
+  ok(is2xx(earnOrder.status), 'สร้างออเดอร์สำหรับทดสอบแต้มอัตโนมัติ', JSON.stringify(earnOrder.body));
+  const eoId = earnOrder.body?.id;
+  const expectPoints = Math.floor(earnOrder.body?.subtotal / 100 / 20);
+  const beforeDone = await req('GET', '/loyalty/me', { token: earnerTok });
+  ok(beforeDone.body?.balance === 0, 'ยังไม่ส่งสำเร็จ = ยังไม่ได้แต้ม', `balance=${beforeDone.body?.balance}`);
+
+  for (const st of ['confirmed', 'preparing', 'ready', 'delivering', 'completed']) {
+    await req('PATCH', `/admin/orders/${eoId}/status?brandId=${brandId}`, { token: adminToken, body: { status: st } });
+  }
+  const afterDone = await req('GET', '/loyalty/me', { token: earnerTok });
+  ok(afterDone.body?.balance === expectPoints && expectPoints > 0,
+    `⭐ ส่งสำเร็จ → ได้แต้มตามอัตรา (${earnOrder.body?.subtotal / 100}฿ ÷ 20 = ${expectPoints})`,
+    `balance=${afterDone.body?.balance}`);
+  ok((afterDone.body?.history || []).some((h) => h.type === 'earn' && h.points === expectPoints), 'แต้มจากออเดอร์ลง ledger');
+
+  // US-57: ใช้แต้มเป็นส่วนลดตอนสั่ง
+  const discReward = await req('POST', '/admin/loyalty/rewards', {
+    token: adminToken,
+    body: { brandId, name: 'E2E ส่วนลด 30 บาท', pointsCost: 5, type: 'discount', discountAmount: 3000 },
+  });
+  ok(is2xx(discReward.status), 'สร้างรางวัลชนิดส่วนลดเงิน');
+  const freeReward = await req('POST', '/admin/loyalty/rewards', {
+    token: adminToken, body: { brandId, name: 'E2E ของฟรีรับที่ร้าน', pointsCost: 1 },
+  });
+
+  const discOrder = await req('POST', '/orders', {
+    token: earnerTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'ทดสอบส่วนลดจากแต้ม', ...IN_ZONE },
+      paymentMethod: 'cod',
+      loyaltyRewardId: discReward.body?.id,
+    },
+  });
+  ok(is2xx(discOrder.status) && discOrder.body?.discount === 3000,
+    '⭐ ใช้แต้มแลกส่วนลด → server ใส่ discount 30฿',
+    JSON.stringify({ d: discOrder.body?.discount, t: discOrder.body?.total }));
+  ok(discOrder.body?.total === discOrder.body?.subtotal - 3000 + discOrder.body?.deliveryFee, 'total หักส่วนลดถูกต้อง');
+  const afterDisc = await req('GET', '/loyalty/me', { token: earnerTok });
+  ok(afterDisc.body?.balance === expectPoints - 5, `ตัดแต้มค่าส่วนลด (${expectPoints}−5)`, `balance=${afterDisc.body?.balance}`);
+  ok((afterDisc.body?.history || []).some((h) => h.points === -5), 'การใช้ส่วนลดลง ledger เป็น redeem');
+
+  const wrongType = await req('POST', '/orders', {
+    token: earnerTok,
+    body: {
+      idempotencyKey: uuid(), items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'x', ...IN_ZONE }, paymentMethod: 'cod',
+      loyaltyRewardId: freeReward.body?.id,
+    },
+  });
+  ok(wrongType.status === 400, 'รางวัลของฟรีใช้เป็นส่วนลดตอนสั่งไม่ได้ → 400', `ได้ ${wrongType.status}`);
+
+  const poorLogin = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-poor-' + uuid() } });
+  const notEnough = await req('POST', '/orders', {
+    token: poorLogin.body?.accessToken,
+    body: {
+      idempotencyKey: uuid(), items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'x', ...IN_ZONE }, paymentMethod: 'cod',
+      loyaltyRewardId: discReward.body?.id,
+    },
+  });
+  ok(notEnough.status === 422, 'แต้มไม่พอแต่ขอส่วนลด → 422 ไม่สร้างออเดอร์', `ได้ ${notEnough.status}`);
+
+  // audience rule "แต้ม ≥ N" (US-57)
+  const ptsAudience = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 1 }] } },
+  });
+  ok(is2xx(ptsAudience.status) && ptsAudience.body?.audienceCount >= 1,
+    'audience rule แต้ม ≥ 1 หาลูกค้าเจอ', JSON.stringify(ptsAudience.body));
+  const ptsHuge = await req('POST', `/admin/audiences/preview?brandId=${brandId}`, {
+    token: adminToken, body: { rules: { match: 'all', criteria: [{ type: 'points_min', points: 9999999 }] } },
+  });
+  ok(ptsHuge.body?.audienceCount === 0, 'audience rule แต้มสูงเกินจริง → ไม่มีใครเข้าเกณฑ์');
+  await req('PATCH', `/admin/loyalty/settings?brandId=${brandId}`, { token: adminToken, body: { bahtPerPoint: 0 } });
+
   // การ์ดแต้มโผล่ในโปรไฟล์แล้ว (US-59 ผูกกับค่านี้)
   const profLoyalty = await req('GET', '/me/profile', { token: loyToken });
   ok(profLoyalty.body?.loyalty?.balance === 0, '/me/profile คืน loyalty แล้ว (แท็บแต้มใน LIFF ติดขึ้นมา)', JSON.stringify(profLoyalty.body?.loyalty));

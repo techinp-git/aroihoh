@@ -438,7 +438,8 @@ export type Criterion =
   | { type: 'tenure_min_days'; days: number }
   | { type: 'order_count_in_window'; windowDays: number; minCount: number }
   | { type: 'lapsed'; inactiveDays: number; lookbackDays: number }
-  | { type: 'tags'; tags: string[] };
+  | { type: 'tags'; tags: string[] }
+  | { type: 'points_min'; points: number }; // US-57: แต้มสะสม ≥ N
 export interface AudienceRules { match: 'all' | 'any'; criteria: Criterion[]; }
 export interface Audience {
   id: string; name: string; description: string | null; rules: AudienceRules;
@@ -619,6 +620,8 @@ export const listLoyaltyCodes = (brandId: string, batchId: string) =>
 export interface LoyaltyReport {
   days: number;
   dailyEarnCap: number;
+  /** US-56: ทุกกี่บาทได้ 1 แต้ม (null = ปิดการให้แต้มอัตโนมัติ) */
+  bahtPerPoint: number | null;
   totals: { earned: number; redeemed: number; scans: number; outstandingPoints: number; customers: number };
   daily: { date: string; earned: number; redeemed: number }[];
   batches: { id: string; name: string; status: string; points: number; codeCount: number; usedCount: number }[];
@@ -630,10 +633,14 @@ export interface LoyaltyReport {
 export const getLoyaltyReport = (brandId: string, days = 14) =>
   adminFetch<LoyaltyReport>(`/admin/loyalty/report?brandId=${encodeURIComponent(brandId)}&days=${days}`);
 
-export const setLoyaltyDailyCap = (brandId: string, dailyEarnCap: number) =>
-  adminFetch<{ dailyEarnCap: number }>(`/admin/loyalty/settings?brandId=${encodeURIComponent(brandId)}`, {
-    method: 'PATCH', body: JSON.stringify({ dailyEarnCap }),
-  });
+export const setLoyaltySettings = (
+  brandId: string,
+  body: { dailyEarnCap?: number; bahtPerPoint?: number },
+) =>
+  adminFetch<{ dailyEarnCap: number; bahtPerPoint: number | null }>(
+    `/admin/loyalty/settings?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  );
 
 export const adjustCustomerPoints = (brandId: string, customerId: string, points: number, note: string) =>
   adminFetch<{ balance: number; points: number }>(

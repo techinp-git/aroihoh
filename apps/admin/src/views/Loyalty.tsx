@@ -6,7 +6,7 @@ import {
   listLoyaltyCodes,
   getLoyaltyReport,
   setLoyaltyBatchStatus,
-  setLoyaltyDailyCap,
+  setLoyaltySettings,
   createLoyaltyReward,
   listLoyaltyRewards,
   previewRedemption,
@@ -520,22 +520,30 @@ function ReportTab({ brandId }: { brandId: string }) {
   const [days, setDays] = useState(14);
   const [err, setErr] = useState('');
   const [cap, setCap] = useState('');
+  const [rate, setRate] = useState('');
   const [capMsg, setCapMsg] = useState('');
 
   const load = () => {
     if (!brandId) return;
     getLoyaltyReport(brandId, days)
-      .then((d) => { setData(d); setCap(String(d.dailyEarnCap)); })
+      .then((d) => { setData(d); setCap(String(d.dailyEarnCap)); setRate(String(d.bahtPerPoint ?? 0)); })
       .catch((e) => setErr((e as Error).message));
   };
   useEffect(load, [brandId, days]);
 
-  const saveCap = async () => {
+  const saveSettings = async () => {
     setCapMsg('');
     try {
-      const r = await setLoyaltyDailyCap(brandId, parseInt(cap, 10) || 0);
+      const r = await setLoyaltySettings(brandId, {
+        dailyEarnCap: parseInt(cap, 10) || 0,
+        bahtPerPoint: parseInt(rate, 10) || 0,
+      });
       setCap(String(r.dailyEarnCap));
-      setCapMsg(`บันทึกแล้ว — ลูกค้า 1 คนสแกนได้ ${r.dailyEarnCap} ใบ/วัน`);
+      setRate(String(r.bahtPerPoint ?? 0));
+      setCapMsg(
+        `บันทึกแล้ว — สแกนได้ ${r.dailyEarnCap} ใบ/วัน · ` +
+          (r.bahtPerPoint ? `ทุก ${r.bahtPerPoint} บาทได้ 1 แต้ม` : 'ปิดการให้แต้มอัตโนมัติจากออเดอร์'),
+      );
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -624,13 +632,25 @@ function ReportTab({ brandId }: { brandId: string }) {
       </div>
 
       <div className="card" style={{ padding: 16 }}>
-        <div className="stat-label" style={{ marginBottom: 8 }}>เพดานสแกนต่อวัน (ต่อลูกค้า 1 คน)</div>
-        <div className="page-sub" style={{ marginBottom: 10 }}>
-          กันคนเก็บสติกเกอร์ที่ยังไม่แจกมาสแกนรวดเดียว · ใส่ 0 = กลับไปใช้ค่าเริ่มต้นของระบบ
+        <div className="stat-label" style={{ marginBottom: 8 }}>ตั้งค่าสะสมแต้ม</div>
+
+        <div className="page-sub" style={{ marginBottom: 6 }}>
+          <b>เพดานสแกนต่อวัน (ต่อลูกค้า 1 คน)</b> — กันคนเก็บสติกเกอร์ที่ยังไม่แจกมาสแกนรวดเดียว ·
+          ใส่ 0 = กลับไปใช้ค่าเริ่มต้นของระบบ
         </div>
-        <div className="scan-manual">
+        <div className="scan-manual" style={{ marginTop: 4 }}>
           <input value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ''))} style={{ maxWidth: 120 }} />
-          <button className="btn primary" onClick={saveCap}>บันทึก</button>
+          <span className="page-sub" style={{ alignSelf: 'center' }}>ใบ/วัน</span>
+        </div>
+
+        <div className="page-sub" style={{ margin: '14px 0 6px' }}>
+          <b>ให้แต้มอัตโนมัติเมื่อออเดอร์ส่งสำเร็จ (US-56)</b> — ทุกกี่บาทได้ 1 แต้ม ·
+          คิดจากค่าอาหารหลังหักส่วนลด ไม่รวมค่าส่ง · <b>ใส่ 0 = ปิด</b>
+        </div>
+        <div className="scan-manual" style={{ marginTop: 4 }}>
+          <input value={rate} onChange={(e) => setRate(e.target.value.replace(/\D/g, ''))} style={{ maxWidth: 120 }} />
+          <span className="page-sub" style={{ alignSelf: 'center' }}>บาท = 1 แต้ม</span>
+          <button className="btn primary" onClick={saveSettings}>บันทึก</button>
         </div>
         {capMsg && <div className="alert info" style={{ marginTop: 10 }}>{capMsg}</div>}
       </div>

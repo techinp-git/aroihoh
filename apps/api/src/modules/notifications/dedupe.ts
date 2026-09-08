@@ -7,7 +7,7 @@
 
 import type { OrderStatus } from '@aroihoh/shared';
 
-export type NotifyKind = 'order_confirm' | 'status_push';
+export type NotifyKind = 'order_confirm' | 'status_push' | 'points_earned';
 
 /**
  * dedupeKey — unique ใน message_logs (กันแถวซ้ำที่ระดับ DB ไม่ใช่แค่ระดับแอป)
@@ -15,13 +15,16 @@ export type NotifyKind = 'order_confirm' | 'status_push';
  * → กดเปลี่ยนสถานะไปกลับ confirmed→preparing→confirmed จะไม่ push ซ้ำ
  */
 export function buildDedupeKey(kind: NotifyKind, orderId: string, status?: OrderStatus): string {
-  return kind === 'order_confirm' ? `confirm:${orderId}` : `status:${orderId}:${status}`;
+  if (kind === 'order_confirm') return `confirm:${orderId}`;
+  if (kind === 'points_earned') return `points:${orderId}`; // US-56: 1 ออเดอร์ = แจ้งแต้มครั้งเดียว
+  return `status:${orderId}:${status}`;
 }
 
 /** แกะ dedupeKey กลับ (ใช้ตอน debug/รายงาน) */
 export function parseDedupeKey(key: string): { kind: NotifyKind; orderId: string; status?: string } | null {
   const [prefix, orderId, status] = key.split(':');
   if (prefix === 'confirm' && orderId) return { kind: 'order_confirm', orderId };
+  if (prefix === 'points' && orderId) return { kind: 'points_earned', orderId };
   if (prefix === 'status' && orderId && status) return { kind: 'status_push', orderId, status };
   return null;
 }

@@ -8,6 +8,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { assertBrandAccess } from '../../common/admin-scope';
@@ -30,6 +31,7 @@ import {
   bangkokDayStart,
   detectAnomalies,
   isThrottled,
+  pointsForOrder,
   pruneAttempts,
   resolveDailyCap,
   summarizeDaily,
@@ -323,6 +325,138 @@ export class LoyaltyService {
     return { cancelled: true };
   }
 
+  // ───────── ต่อกับออเดอร์ (เฟส 2) ─────────
+
+  /**
+   * US-56: ให้แต้มเมื่อออเดอร์ส่งสำเร็จ — เรียกใน transaction เดียวกับการเปลี่ยนสถานะ
+   * เพื่อให้ "ออเดอร์ completed แล้วต้องได้แต้ม" เป็นจริงเสมอ ไม่มีเคสส่งสำเร็จแต่แต้มหาย
+   *
+   * idempotent ด้วยการเช็ค ledger ที่อ้าง orderId เดิม (นอกเหนือจาก status flow ที่กันอยู่แล้ว)
+   * คืน 0 เมื่อแบรนด์ยังไม่ตั้งอัตรา (ฟีเจอร์นี้ต้อง opt-in)
+   */
+  async awardForOrder(
+    tx: Prisma.TransactionClient,
+    input: {
+      brandId: string;
+      customerId: string;
+      orderId: string;
+      subtotal: number;
+      discount: number;
+    },
+  ): Promise<number> {
+    const brand = await tx.brand.findUnique({
+      where: { id: input.brandId },
+      select: { loyaltyBahtPerPoint: true },
+    });
+    const points = pointsForOrder(input.subtotal, input.discount, brand?.loyaltyBahtPerPoint);
+    if (points <= 0) return 0;
+
+    const already = await tx.loyaltyTransaction.findFirst({
+      where: { brandId: input.brandId, refType: 'order', refId: input.orderId, type: 'earn' },
+      select: { id: true },
+    });
+    if (already) return 0;
+
+    await tx.loyaltyTransaction.create({
+      data: {
+        brandId: input.brandId,
+        customerId: input.customerId,
+        type: 'earn',
+        points,
+        note: 'สั่งอาหารสำเร็จ',
+        ...ledgerRef('order', input.orderId),
+      },
+    });
+    await tx.customer.update({
+      where: { id: input.customerId },
+      data: { pointsBalance: { increment: points } },
+    });
+    return points;
+  }
+
+  /**
+   * US-57: เตรียมส่วนลดจากการแลกแต้มตอนสั่ง (ยังไม่ตัดแต้ม แค่ตรวจว่าใช้ได้และคิดยอด)
+   * เฉพาะรางวัลชนิดส่วนลดเงิน — ของฟรีต้องไปรับที่ร้าน (คนขายสแกนคูปอง US-54)
+   */
+  async planRewardDiscount(scope: CustomerScope, rewardId: string, subtotal: number) {
+    const reward = await this.prisma.loyaltyReward.findFirst({
+      where: { id: rewardId, brandId: scope.brandId, isActive: true },
+    });
+    if (!reward) throw new NotFoundException('ไม่พบรางวัลนี้');
+    if (reward.type !== 'discount' || !reward.discountAmount) {
+      throw new BadRequestException('รางวัลนี้ต้องรับที่ร้าน ใช้เป็นส่วนลดตอนสั่งไม่ได้');
+    }
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: scope.customerId, brandId: scope.brandId },
+      select: { pointsBalance: true },
+    });
+    if (!canRedeem(customer?.pointsBalance ?? 0, reward.pointsCost)) {
+      throw new UnprocessableEntityException({
+        code: 'NOT_ENOUGH_POINTS',
+        message: `แต้มไม่พอ ต้องมี ${reward.pointsCost} แต้ม`,
+        balance: customer?.pointsBalance ?? 0,
+      });
+    }
+    return {
+      rewardId: reward.id,
+      rewardName: reward.name,
+      pointsCost: reward.pointsCost,
+      // ส่วนลดเกินค่าอาหารก็ลดได้แค่เท่าค่าอาหาร — ไม่ไปลดค่าส่งของไรเดอร์
+      discount: Math.min(reward.discountAmount, subtotal),
+    };
+  }
+
+  /**
+   * ตัดแต้มจริง + ผูกใบแลกกับออเดอร์ — เรียกใน transaction เดียวกับการสร้างออเดอร์
+   * ใช้เงื่อนไข pointsBalance >= cost แบบเดียวกับตอนคนขายยืนยัน → แต้มติดลบไม่ได้
+   */
+  async consumeRewardForOrder(
+    tx: Prisma.TransactionClient,
+    scope: CustomerScope,
+    plan: { rewardId: string; rewardName: string; pointsCost: number; discount: number },
+    orderId: string,
+  ) {
+    const deducted = await tx.customer.updateMany({
+      where: {
+        id: scope.customerId,
+        brandId: scope.brandId,
+        pointsBalance: { gte: plan.pointsCost },
+      },
+      data: { pointsBalance: { decrement: plan.pointsCost } },
+    });
+    if (deducted.count === 0) {
+      throw new UnprocessableEntityException({
+        code: 'NOT_ENOUGH_POINTS',
+        message: 'แต้มไม่พอแล้ว (อาจเพิ่งใช้ไปกับรายการอื่น)',
+      });
+    }
+    const now = new Date();
+    await tx.loyaltyRedemption.create({
+      data: {
+        brandId: scope.brandId,
+        customerId: scope.customerId,
+        rewardId: plan.rewardId,
+        rewardName: plan.rewardName,
+        pointsCost: plan.pointsCost,
+        token: generateToken(randomBytes(TOKEN_LENGTH)),
+        status: 'confirmed', // ใช้ไปกับออเดอร์แล้ว ไม่ต้องมีใครสแกน
+        expiresAt: now,
+        confirmedAt: now,
+        orderId,
+      },
+    });
+    await tx.loyaltyTransaction.create({
+      data: {
+        brandId: scope.brandId,
+        customerId: scope.customerId,
+        type: 'redeem',
+        points: -plan.pointsCost,
+        note: `${plan.rewardName} (ส่วนลดตอนสั่ง)`,
+        ...ledgerRef('order', orderId),
+      },
+    });
+  }
+
   // ───────── แอดมิน ─────────
 
   /** สร้างล็อต QR + ออกโค้ดทั้งหมดในทรานแซกชันเดียว (เริ่มที่ draft เสมอ) */
@@ -538,14 +672,33 @@ export class LoyaltyService {
     });
   }
 
-  /** US-55: ตั้งเพดานสแกนต่อวันของแบรนด์ (null = กลับไปใช้ค่าเริ่มต้นในโค้ด) */
-  async setDailyCap(admin: AdminJwt, brandId: string, cap: number | null) {
+  /**
+   * US-55/56: ตั้งค่าสะสมแต้มของแบรนด์
+   *  - dailyEarnCap: null/0 = กลับไปใช้ค่าเริ่มต้นในโค้ด
+   *  - bahtPerPoint: null/0 = ปิดการให้แต้มอัตโนมัติจากออเดอร์
+   */
+  async setSettings(
+    admin: AdminJwt,
+    brandId: string,
+    dto: { dailyEarnCap?: number | null; bahtPerPoint?: number | null },
+  ) {
     assertBrandAccess(admin, brandId);
-    await this.prisma.brand.update({
+    const data: { loyaltyDailyEarnCap?: number | null; loyaltyBahtPerPoint?: number | null } = {};
+    if (dto.dailyEarnCap !== undefined) {
+      data.loyaltyDailyEarnCap = dto.dailyEarnCap && dto.dailyEarnCap > 0 ? dto.dailyEarnCap : null;
+    }
+    if (dto.bahtPerPoint !== undefined) {
+      data.loyaltyBahtPerPoint = dto.bahtPerPoint && dto.bahtPerPoint > 0 ? dto.bahtPerPoint : null;
+    }
+    const b = await this.prisma.brand.update({
       where: { id: brandId },
-      data: { loyaltyDailyEarnCap: cap && cap > 0 ? cap : null },
+      data,
+      select: { loyaltyDailyEarnCap: true, loyaltyBahtPerPoint: true },
     });
-    return { dailyEarnCap: resolveDailyCap(cap) };
+    return {
+      dailyEarnCap: resolveDailyCap(b.loyaltyDailyEarnCap),
+      bahtPerPoint: b.loyaltyBahtPerPoint,
+    };
   }
 
   /** US-55: รายงานแต้ม — เข้า/ออกรายวัน · ต่อล็อต · ลูกค้าที่สแกนรัวผิดปกติ */
@@ -570,7 +723,7 @@ export class LoyaltyService {
       }),
       this.prisma.brand.findUnique({
         where: { id: brandId },
-        select: { loyaltyDailyEarnCap: true },
+        select: { loyaltyDailyEarnCap: true, loyaltyBahtPerPoint: true },
       }),
     ]);
 
@@ -592,6 +745,7 @@ export class LoyaltyService {
     return {
       days,
       dailyEarnCap: resolveDailyCap(brand?.loyaltyDailyEarnCap),
+      bahtPerPoint: brand?.loyaltyBahtPerPoint ?? null,
       totals: {
         earned: daily.reduce((a, d) => a + d.earned, 0),
         redeemed: daily.reduce((a, d) => a + d.redeemed, 0),

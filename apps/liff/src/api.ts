@@ -60,7 +60,7 @@ export interface DeliveryCheck { inZone: boolean; distanceKm?: number; deliveryF
 export interface OrderItemLite { id: string; nameSnapshot: string; qty: number; lineTotal: number; }
 export interface OrderResult {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
-  subtotal: number; deliveryFee: number; total: number;
+  subtotal: number; deliveryFee: number; discount: number; total: number;
   items: OrderItemLite[]; createdAt: string; cancelReason: string | null;
 }
 
@@ -102,6 +102,8 @@ export interface CreateOrderBody {
   deliveryAddress?: { detail: string; lat: number; lng: number; label?: string; note?: string };
   /** ติ๊ก "บันทึกที่อยู่นี้ไว้" (ใช้กับ deliveryAddress เท่านั้น) */
   saveAddress?: boolean;
+  /** US-57: ใช้แต้มแลกส่วนลดกับออเดอร์นี้ — ยอดส่วนลดคิดฝั่ง server */
+  loyaltyRewardId?: string;
   paymentMethod: 'cod' | 'promptpay';
   note?: string;
 }

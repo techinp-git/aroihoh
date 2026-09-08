@@ -7,6 +7,7 @@ import {
   detectAnomalies,
   isThrottled,
   pruneAttempts,
+  pointsForOrder,
   resolveDailyCap,
   summarizeDaily,
 } from './guard';
@@ -132,5 +133,30 @@ describe('summarizeDaily', () => {
 
   it('ไม่มีรายการ = ลิสต์ว่าง', () => {
     expect(summarizeDaily([])).toEqual([]);
+  });
+});
+
+describe('pointsForOrder (US-56)', () => {
+  it('ไม่ตั้งอัตรา = ไม่ให้แต้ม (ต้อง opt-in)', () => {
+    expect(pointsForOrder(60000, 0, null)).toBe(0);
+    expect(pointsForOrder(60000, 0, undefined)).toBe(0);
+    expect(pointsForOrder(60000, 0, 0)).toBe(0);
+  });
+
+  it('ทุก 20 บาท ได้ 1 แต้ม · ปัดลง', () => {
+    expect(pointsForOrder(6000, 0, 20)).toBe(3); // 60 บาท
+    expect(pointsForOrder(5900, 0, 20)).toBe(2); // 59 บาท → 2.95 ปัดลง
+  });
+
+  it('หักส่วนลดออกจากฐานคิด (ส่วนลดจากแต้มไม่วนกลับมาเป็นแต้ม)', () => {
+    expect(pointsForOrder(12000, 6000, 20)).toBe(3); // จ่ายจริง 60 บาท
+  });
+
+  it('ส่วนลดมากกว่าค่าอาหาร (ตั้งค่าเพี้ยน) = 0 ไม่ใช่ติดลบ', () => {
+    expect(pointsForOrder(6000, 999999, 20)).toBe(0);
+  });
+
+  it('ค่าอาหารน้อยกว่าอัตรา = ยังไม่ได้แต้ม', () => {
+    expect(pointsForOrder(1000, 0, 20)).toBe(0); // 10 บาท
   });
 });

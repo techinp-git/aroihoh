@@ -13,6 +13,8 @@ export function describeCriterion(c: Criterion): string {
       return `หายไป: ไม่สั่ง ${c.inactiveDays} วันล่าสุด แต่เคยสั่งใน ${c.lookbackDays} วันก่อนหน้า`;
     case 'tags':
       return `มีแท็ก: ${c.tags.join(', ') || '—'}`;
+    case 'points_min':
+      return `มีแต้มสะสม ≥ ${c.points} แต้ม`;
     default:
       return 'เกณฑ์ไม่รู้จัก';
   }
@@ -29,6 +31,7 @@ export const CRITERION_TYPES: { type: Criterion['type']; label: string }[] = [
   { type: 'order_count_in_window', label: 'ความถี่การสั่ง (≥ N ครั้งใน X วัน)' },
   { type: 'lapsed', label: 'ลูกค้าที่หายไป' },
   { type: 'tags', label: 'แท็กลูกค้า' },
+  { type: 'points_min', label: 'แต้มสะสม (≥ N แต้ม)' },
 ];
 
 // ค่าเริ่มต้นของเกณฑ์แต่ละชนิดตอนเพิ่มใหม่
@@ -42,5 +45,7 @@ export function defaultCriterion(type: Criterion['type']): Criterion {
       return { type, inactiveDays: 7, lookbackDays: 30 };
     case 'tags':
       return { type, tags: [] };
+    case 'points_min':
+      return { type, points: 100 };
   }
 }
