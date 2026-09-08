@@ -23,7 +23,7 @@ body { background: var(--page); color: var(--text); font-family: system-ui, -app
 .hdr .sub { font-size: 11px; color: var(--faint); }
 .hdr .back { background: none; border: none; font-size: 15px; cursor: pointer; color: var(--accent); font-weight: 600; padding: 0; }
 
-.body { flex: 1; padding: 12px 16px 100px; }
+.body { flex: 1; padding: 12px 16px 160px; }
 .center { min-height: 70vh; display: grid; place-items: center; color: var(--faint); text-align: center; }
 
 .cat-title { font-size: 13px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; }
@@ -38,7 +38,15 @@ body { background: var(--page); color: var(--text); font-family: system-ui, -app
 .stepper .add { background: var(--accent); color: #fff; border-color: var(--accent); }
 .stepper .qn { min-width: 18px; text-align: center; font-weight: 600; }
 
-.cartbar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border); box-shadow: 0 -2px 10px rgba(16,24,40,.06); }
+.bottom { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--bg); box-shadow: 0 -2px 10px rgba(16,24,40,.06); z-index: 6; }
+.cartbar { padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border); }
+
+/* แท็บล่าง (US-59) */
+.navbar { display: flex; border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+.navbtn { flex: 1; background: none; border: none; font: inherit; font-size: 11px; font-weight: 600; color: var(--faint); padding: 8px 4px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.navbtn .ico { font-size: 20px; line-height: 1.1; filter: grayscale(1); opacity: .55; }
+.navbtn.on { color: var(--brand-primary, var(--accent)); }
+.navbtn.on .ico { filter: none; opacity: 1; }
 .btn { width: 100%; border: none; border-radius: 12px; padding: 14px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.primary:disabled { opacity: .5; }
@@ -92,3 +100,44 @@ input:focus, textarea:focus { border-color: var(--accent); }
 
 .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── US-59: โปรไฟล์ + สมุดที่อยู่ ── */
+.prof-hero { display: flex; align-items: center; gap: 12px; padding: 6px 2px 14px; }
+.prof-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex: none; }
+.prof-avatar.fallback { display: grid; place-items: center; background: var(--accent-weak); color: var(--accent); font-size: 22px; font-weight: 700; }
+.prof-name { font-size: 17px; font-weight: 700; }
+.prof-since { font-size: 12px; color: var(--muted); }
+
+.points-card { border-color: var(--brand-primary, var(--accent)); }
+.points-card .desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+.empty { font-size: 13px; color: var(--muted); padding: 6px 0 2px; line-height: 1.5; }
+
+/* แถวที่อยู่/ออเดอร์ — เป็นปุ่มทั้งแถว แตะตรงไหนก็เข้าได้ */
+.addr-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--border); padding: 11px 0; cursor: pointer; }
+.addr-row:last-of-type { border-bottom: none; }
+.addr-row:active { background: var(--page); }
+.addr-ico { font-size: 20px; flex: none; }
+.addr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.addr-label { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.addr-detail { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.addr-go { color: var(--faint); font-size: 20px; flex: none; }
+
+.pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); }
+.pill.warn { background: #fee2e2; color: var(--red); }
+
+/* ชิปเลือกที่อยู่ / ป้ายชื่อ */
+.chiprow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chip { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer; }
+.chip.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent); }
+.chip.off { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
+/* input เป็น width:100% ตามค่าตั้งต้น — ต้องล้มไม่งั้นดันชิปตกบรรทัด */
+.chip-input { width: auto; flex: 1 1 110px; min-width: 0; font-size: 13px; padding: 7px 13px; border-radius: 999px; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin-top: 12px; cursor: pointer; }
+.check input { width: auto; }
+
+/* ปุ่มคู่ ยกเลิก/บันทึก — .btn เป็น width:100% ต้องล้มทั้งคู่ */
+.rowbtns { display: flex; gap: 10px; margin-top: 14px; }
+.rowbtns .btn { width: auto; flex: 1; }
+.btn.danger { background: #fee2e2; color: var(--red); }

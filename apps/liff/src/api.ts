@@ -9,6 +9,9 @@ export const BRAND_ID = params.get('brandId') || (import.meta.env.VITE_BRAND_ID 
 // LINE เอา query นี้ต่อท้าย Endpoint URL ที่มี ?brandId= อยู่แล้ว → มาถึงเราครบทั้งคู่
 export const DEEP_LINK_ORDER_ID = params.get('orderId') || '';
 
+// US-59: Rich Menu / ลิงก์ยิงตรงเข้าแท็บ — `?view=profile` | `?view=points`
+export const DEEP_LINK_VIEW = params.get('view') || '';
+
 let token = sessionStorage.getItem('liffToken') || '';
 export const setToken = (t: string) => {
   token = t;
@@ -82,7 +85,11 @@ export const checkDelivery = (lat: number, lng: number) =>
 export interface CreateOrderBody {
   idempotencyKey: string;
   items: { menuItemId: string; qty: number; note?: string }[];
-  deliveryAddress: { detail: string; lat: number; lng: number; label?: string };
+  // US-58: ส่งอย่างใดอย่างหนึ่ง — หมุดในสมุด หรือหมุดที่ปักสด
+  savedAddressId?: string;
+  deliveryAddress?: { detail: string; lat: number; lng: number; label?: string; note?: string };
+  /** ติ๊ก "บันทึกที่อยู่นี้ไว้" (ใช้กับ deliveryAddress เท่านั้น) */
+  saveAddress?: boolean;
   paymentMethod: 'cod' | 'promptpay';
   note?: string;
 }
@@ -90,5 +97,70 @@ export const createOrder = (body: CreateOrderBody) =>
   api<OrderResult>('/orders', { method: 'POST', body: JSON.stringify(body) });
 
 export const getOrder = (id: string) => api<OrderResult>(`/orders/${id}`);
+
+// ── US-58/59: โปรไฟล์ + สมุดที่อยู่ ──
+export interface SavedAddress {
+  id: string;
+  label: string | null;
+  detail: string;
+  note: string | null;
+  lat: number;
+  lng: number;
+  isDefault: boolean;
+  updatedAt: string;
+  /** ส่งถึงไหม — server คำนวณสด (null = ยังไม่รู้ เช่นแบรนด์ยังไม่ผูกครัว) */
+  deliverable: boolean | null;
+  distanceKm: number | null;
+  deliveryFee: number | null;
+}
+/** EP-14 ยังไม่ลง → /me/profile คืน loyalty เป็น null และแท็บ "แต้ม" จะยังไม่โผล่ */
+export interface LoyaltySummary {
+  balance: number;
+  nextReward?: { name: string; pointsCost: number } | null;
+}
+export interface RecentOrder {
+  id: string;
+  status: string;
+  total: number;
+  createdAt: string;
+  items: { nameSnapshot: string; qty: number }[];
+}
+export interface Profile {
+  displayName: string | null;
+  pictureUrl: string | null;
+  memberSince: string;
+  hasPhone: boolean;
+  phoneLast4: string | null;
+  marketingOptedOut: boolean;
+  addresses: SavedAddress[];
+  addressLimit: number;
+  recentOrders: RecentOrder[];
+  loyalty: LoyaltySummary | null;
+}
+export interface AddressBook {
+  addresses: SavedAddress[];
+}
+export interface AddressInput {
+  label?: string;
+  detail: string;
+  note?: string;
+  lat: number;
+  lng: number;
+  isDefault?: boolean;
+}
+
+export const getProfile = () => api<Profile>('/me/profile');
+
+export const createAddress = (body: AddressInput) =>
+  api<AddressBook & { created: string }>('/me/addresses', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const updateAddress = (id: string, body: Partial<AddressInput>) =>
+  api<AddressBook>(`/me/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+export const deleteAddress = (id: string) =>
+  api<AddressBook>(`/me/addresses/${id}`, { method: 'DELETE' });
 
 export const baht = (s: number) => (s / 100).toLocaleString('th-TH') + ' ฿';
