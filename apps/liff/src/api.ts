@@ -12,6 +12,18 @@ export const DEEP_LINK_ORDER_ID = params.get('orderId') || '';
 // US-59: Rich Menu / ลิงก์ยิงตรงเข้าแท็บ — `?view=profile` | `?view=points`
 export const DEEP_LINK_VIEW = params.get('view') || '';
 
+// US-52: สแกน QR สะสมแต้ม — `https://liff.line.me/<liffId>?e=<code>`
+// LINE ต่อ query นี้ท้าย Endpoint URL ที่มี ?brandId= อยู่แล้ว → มาถึงเราครบทั้งคู่
+export const DEEP_LINK_EARN_CODE = params.get('e') || '';
+
+/** ลบ ?e= ออกจาก URL หลังพยายามรับแต้มแล้ว — กันรีเฟรชแล้วยิงซ้ำจนเจอ "ใช้แล้ว" */
+export function clearEarnParam() {
+  const u = new URL(location.href);
+  if (!u.searchParams.has('e')) return;
+  u.searchParams.delete('e');
+  history.replaceState(null, '', u.toString());
+}
+
 let token = sessionStorage.getItem('liffToken') || '';
 export const setToken = (t: string) => {
   token = t;
@@ -150,6 +162,34 @@ export interface AddressInput {
 }
 
 export const getProfile = () => api<Profile>('/me/profile');
+
+// ── US-50/52: สะสมแต้ม ──
+export interface LoyaltyTx {
+  id: string;
+  type: 'earn' | 'redeem' | 'adjust' | 'expire';
+  points: number;
+  note: string | null;
+  createdAt: string;
+}
+export interface PendingRedemption {
+  id: string; token: string; code: string; rewardName: string;
+  pointsCost: number; status: string; expiresAt: string;
+}
+export interface LoyaltyMe {
+  balance: number;
+  nextReward: { id: string; name: string; pointsCost: number } | null;
+  history: LoyaltyTx[];
+  pending: PendingRedemption | null;
+}
+export interface EarnResult {
+  earned: number;
+  balance: number;
+}
+
+export const getLoyaltyMe = () => api<LoyaltyMe>('/loyalty/me');
+
+export const earnPoints = (code: string) =>
+  api<EarnResult>('/loyalty/earn', { method: 'POST', body: JSON.stringify({ code }) });
 
 /** US-60: เบอร์โทร (เก็บแบบเข้ารหัส) + เลือกรับ/ไม่รับข่าวสารเอง — ส่ง phone:'' เพื่อลบเบอร์ */
 export const updateProfile = (body: { phone?: string | null; marketingOptedOut?: boolean }) =>

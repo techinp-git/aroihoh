@@ -5,12 +5,16 @@ import {
   BRAND_ID,
   DEEP_LINK_ORDER_ID,
   DEEP_LINK_VIEW,
+  DEEP_LINK_EARN_CODE,
+  clearEarnParam,
   setToken,
   devLogin,
   lineLogin,
   getMenu,
   getBrand,
   getProfile,
+  getLoyaltyMe,
+  earnPoints,
   getDeliveryOrigin,
   checkDelivery,
   createOrder,
@@ -24,10 +28,12 @@ import {
   type DeliveryOrigin,
   type Profile,
   type SavedAddress,
+  type LoyaltyMe,
   type CreateOrderBody,
 } from './api';
 import AddressPicker from './AddressPicker';
 import ProfileTab, { addressIcon } from './ProfileTab';
+import PointsTab, { EarnResultView, type EarnOutcome } from './PointsTab';
 
 /** แท็บล่าง (US-59) — "แต้ม" โผล่เมื่อ EP-14 ลงแล้ว (profile.loyalty ไม่ใช่ null) */
 type Tab = 'order' | 'points' | 'profile';
@@ -42,6 +48,50 @@ const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined;
 
 interface CartLine { item: MenuItem; qty: number; }
 
+/**
+ * US-52: ยิงรับแต้มจากโค้ดที่สแกนมา แล้วแปลงผลเป็นข้อความที่ลูกค้าอ่านแล้วรู้ว่าต้องทำอะไรต่อ
+ * แยก 409 (ใช้แล้ว) ออกจาก 404 (ใช้ไม่ได้) เพราะทางออกของลูกค้าคนละเรื่องกัน
+ */
+async function tryEarn(code: string): Promise<EarnOutcome> {
+  try {
+    const r = await earnPoints(code);
+    let nextText: string | undefined;
+    try {
+      const me = await getLoyaltyMe();
+      if (me.nextReward) {
+        const need = Math.max(0, me.nextReward.pointsCost - me.balance);
+        nextText = need === 0
+          ? `แลก ${me.nextReward.name} ได้แล้ว`
+          : `อีก ${need} แต้ม แลก ${me.nextReward.name}`;
+      }
+    } catch {
+      /* ไม่มีข้อความรางวัลถัดไปก็ไม่เป็นไร แต้มได้ไปแล้ว */
+    }
+    return { kind: 'ok', earned: r.earned, balance: r.balance, nextText };
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (status === 409) {
+      return {
+        kind: 'used',
+        title: 'QR นี้ถูกใช้ไปแล้ว',
+        detail: 'สติกเกอร์แต่ละใบสแกนได้ครั้งเดียว ถ้าเพิ่งซื้อกล่องใหม่ ลองสแกนใบในกล่องนั้นแทน',
+      };
+    }
+    if (status === 404) {
+      return {
+        kind: 'invalid',
+        title: 'รหัสนี้ใช้ไม่ได้',
+        detail: 'อาจเป็นของอีกร้าน ยังไม่เปิดใช้ หรือหมดอายุแล้ว — สอบถามพนักงานที่ร้านได้',
+      };
+    }
+    return {
+      kind: 'error',
+      title: 'เชื่อมต่อไม่สำเร็จ',
+      detail: `${(e as Error).message} — ลองสแกนใหม่อีกครั้ง แต้มยังไม่ถูกใช้ไป`,
+    };
+  }
+}
+
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [fatal, setFatal] = useState('');
@@ -53,6 +103,8 @@ export default function App() {
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [brand, setBrand] = useState<BrandInfo | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [points, setPoints] = useState<LoyaltyMe | null>(null);
+  const [earnOutcome, setEarnOutcome] = useState<EarnOutcome | null>(null);
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [note, setNote] = useState('');
 
@@ -101,6 +153,17 @@ export default function App() {
           }
         }
 
+        // US-52: มาจากการสแกน QR สะสมแต้ม → รับแต้มก่อนแล้วโชว์ผลทันที
+        if (DEEP_LINK_EARN_CODE) {
+          const outcome = await tryEarn(DEEP_LINK_EARN_CODE);
+          setEarnOutcome(outcome);
+          clearEarnParam(); // รีเฟรชแล้วไม่ยิงซ้ำจนกลายเป็น "ใช้แล้ว"
+          // โปรไฟล์ถูกโหลดไปก่อนรับแต้ม → ดึงใหม่ให้การ์ดแต้มไม่ค้างยอดเก่า
+          if (outcome.kind === 'ok') getProfile().then(setProfile).catch(() => {});
+          setBooting(false);
+          return;
+        }
+
         // มาจากปุ่ม "ดูสถานะออเดอร์" ใน Flex → เข้าหน้าติดตามเลย ไม่ใช่หน้าเมนู
         // โหลดไม่ได้ (ออเดอร์ของคนอื่น/ถูกลบ) ก็ตกไปหน้าเมนูตามปกติ ไม่ต้องขึ้น error
         if (DEEP_LINK_ORDER_ID) {
@@ -124,6 +187,12 @@ export default function App() {
     })();
   }, []);
 
+  // โหลดแต้มเมื่อเปิดแท็บ "แต้ม" (ยอดอาจเปลี่ยนจากการสแกน/แลกไปแล้ว)
+  useEffect(() => {
+    if (tab !== 'points') return;
+    getLoyaltyMe().then(setPoints).catch(() => {});
+  }, [tab]);
+
   // auto-refresh สถานะระหว่างติดตาม (US-11 ฝั่งลูกค้า)
   useEffect(() => {
     if (tab !== 'order' || view !== 'track' || !order) return;
@@ -143,6 +212,7 @@ export default function App() {
 
   const goTab = (t: Tab) => {
     setError('');
+    setEarnOutcome(null); // ออกจากหน้าผลสแกน
     // สั่งจบแล้ว (done/track) การกดแท็บ "เมนู" ต้องพากลับไปเริ่มสั่งใหม่
     // ไม่ใช่ค้างหน้า "สั่งสำเร็จ" ของออเดอร์เก่า — แต่ถ้ากำลังอยู่กลางตะกร้า/เช็คเอาต์ ให้คงไว้
     if (t === 'order' && (view === 'done' || view === 'track')) setView('menu');
@@ -278,7 +348,8 @@ export default function App() {
 
   const inOrderTab = tab === 'order';
   const headerSub =
-    tab === 'profile' ? 'โปรไฟล์ของฉัน'
+    earnOutcome ? 'สะสมแต้ม'
+    : tab === 'profile' ? 'โปรไฟล์ของฉัน'
     : tab === 'points' ? 'แต้มสะสม'
     : view === 'menu' ? 'เลือกเมนู'
     : undefined;
@@ -290,7 +361,8 @@ export default function App() {
         logoUrl={brand?.logoUrl || undefined}
         sub={headerSub}
         onBack={
-          !inOrderTab ? undefined
+          earnOutcome ? undefined
+          : !inOrderTab ? undefined
           : view === 'cart' ? () => setView('menu')
           : view === 'checkout' ? () => setView('cart')
           : view === 'track' ? () => setView('menu') // เข้าจาก deep link ก็ยังกลับไปสั่งเพิ่มได้
@@ -301,8 +373,17 @@ export default function App() {
       <div className="body">
         {error && <div className="alert">{error}</div>}
 
+        {/* ── ผลการสแกน QR สะสมแต้ม (US-52) — ทับเนื้อหาแท็บจนกว่าจะกดปุ่มออก ── */}
+        {earnOutcome && (
+          <EarnResultView
+            result={earnOutcome}
+            onSeePoints={() => goTab(profile?.loyalty ? 'points' : 'profile')}
+            onOrder={() => { setEarnOutcome(null); setTab('order'); setView('menu'); }}
+          />
+        )}
+
         {/* ── แท็บโปรไฟล์ ── */}
-        {tab === 'profile' && profile && (
+        {!earnOutcome && tab === 'profile' && profile && (
           <ProfileTab
             profile={profile}
             origin={origin}
@@ -313,24 +394,14 @@ export default function App() {
           />
         )}
 
-        {/* ── แท็บแต้ม (EP-14) ── */}
-        {tab === 'points' && profile?.loyalty && (
-          <div className="card points-card">
-            <div className="line total" style={{ border: 0, margin: 0, paddingTop: 0 }}>
-              <span>แต้มสะสม</span>
-              <span>{profile.loyalty.balance.toLocaleString('th-TH')}</span>
-            </div>
-            {profile.loyalty.nextReward && (
-              <div className="desc">
-                อีก {Math.max(0, profile.loyalty.nextReward.pointsCost - profile.loyalty.balance)} แต้ม
-                แลก {profile.loyalty.nextReward.name}
-              </div>
-            )}
-          </div>
+        {/* ── แท็บแต้ม (US-52) ── */}
+        {!earnOutcome && tab === 'points' && (points
+          ? <PointsTab data={points} />
+          : <div className="center"><div className="spinner" /></div>
         )}
 
         {/* MENU */}
-        {inOrderTab && view === 'menu' &&
+        {!earnOutcome && inOrderTab && view === 'menu' &&
           menu.map((cat) => (
             <div key={cat.id}>
               <div className="cat-title">{cat.name}</div>
@@ -355,7 +426,7 @@ export default function App() {
           ))}
 
         {/* CART */}
-        {inOrderTab && view === 'cart' && (
+        {!earnOutcome && inOrderTab && view === 'cart' && (
           <div className="card">
             <h3>ตะกร้าของคุณ</h3>
             {lines.map((l) => (
@@ -377,7 +448,7 @@ export default function App() {
         )}
 
         {/* CHECKOUT */}
-        {inOrderTab && view === 'checkout' && (
+        {!earnOutcome && inOrderTab && view === 'checkout' && (
           <>
             <div className="card">
               <h3>ที่อยู่จัดส่ง</h3>
@@ -480,7 +551,7 @@ export default function App() {
         )}
 
         {/* DONE */}
-        {inOrderTab && view === 'done' && order && (
+        {!earnOutcome && inOrderTab && view === 'done' && order && (
           <>
             <div className="done-hero">
               <div className="emoji">🎉</div>
@@ -495,7 +566,7 @@ export default function App() {
         )}
 
         {/* TRACK */}
-        {inOrderTab && view === 'track' && order && (
+        {!earnOutcome && inOrderTab && view === 'track' && order && (
           <div className="card">
             <h3>สถานะออเดอร์ #{order.id.slice(0, 8)}</h3>
             {order.status === 'cancelled' ? (
@@ -522,26 +593,26 @@ export default function App() {
 
       {/* แถบล่าง: ปุ่มทำงานของหน้า (ถ้ามี) + แท็บ — ซ้อนกันในกล่องเดียว ไม่ต้องคำนวณ offset */}
       <div className="bottom">
-        {inOrderTab && view === 'menu' && count > 0 && (
+        {!earnOutcome && inOrderTab && view === 'menu' && count > 0 && (
           <div className="cartbar">
             <button className="btn primary" onClick={() => setView('cart')}>
               <span className="badge">{count}</span> ดูตะกร้า · {baht(subtotal)}
             </button>
           </div>
         )}
-        {inOrderTab && view === 'cart' && (
+        {!earnOutcome && inOrderTab && view === 'cart' && (
           <div className="cartbar">
             <button className="btn primary" onClick={() => setView('checkout')} disabled={count === 0}>เลือกที่อยู่จัดส่ง</button>
           </div>
         )}
-        {inOrderTab && view === 'checkout' && (
+        {!earnOutcome && inOrderTab && view === 'checkout' && (
           <div className="cartbar">
             <button className="btn primary" onClick={place} disabled={!zone?.inZone || placing}>
               {placing ? <div className="spinner" /> : `ยืนยันสั่ง · ${baht(subtotal + (zone?.deliveryFee ?? 0))}`}
             </button>
           </div>
         )}
-        {inOrderTab && view === 'done' && (
+        {!earnOutcome && inOrderTab && view === 'done' && (
           <div className="cartbar">
             <button className="btn primary" onClick={() => setView('track')}>ติดตามสถานะ</button>
           </div>
