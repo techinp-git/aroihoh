@@ -34,3 +34,14 @@ export class CreateRewardDto {
   @IsOptional() @IsInt() sortOrder?: number;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
+
+/** แก้รางวัล — ส่งเฉพาะฟิลด์ที่เปลี่ยน */
+export class UpdateRewardDto {
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(80) name?: string;
+  @IsOptional() @IsString() @MaxLength(200) description?: string;
+  @IsOptional() @IsInt() @Min(1) pointsCost?: number;
+  @IsOptional() @IsInt() @Min(0) discountAmount?: number;
+  @IsOptional() @IsString() menuItemId?: string;
+  @IsOptional() @IsInt() sortOrder?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}

@@ -15,6 +15,7 @@ import {
   getProfile,
   getLoyaltyMe,
   earnPoints,
+  createRedemption,
   getDeliveryOrigin,
   checkDelivery,
   createOrder,
@@ -29,11 +30,13 @@ import {
   type Profile,
   type SavedAddress,
   type LoyaltyMe,
+  type PendingRedemption,
   type CreateOrderBody,
 } from './api';
 import AddressPicker from './AddressPicker';
 import ProfileTab, { addressIcon } from './ProfileTab';
 import PointsTab, { EarnResultView, type EarnOutcome } from './PointsTab';
+import Coupon from './Coupon';
 
 /** แท็บล่าง (US-59) — "แต้ม" โผล่เมื่อ EP-14 ลงแล้ว (profile.loyalty ไม่ใช่ null) */
 type Tab = 'order' | 'points' | 'profile';
@@ -105,6 +108,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [points, setPoints] = useState<LoyaltyMe | null>(null);
   const [earnOutcome, setEarnOutcome] = useState<EarnOutcome | null>(null);
+  const [coupon, setCoupon] = useState<PendingRedemption | null>(null); // US-53 คูปองที่เปิดอยู่
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [note, setNote] = useState('');
 
@@ -189,9 +193,9 @@ export default function App() {
 
   // โหลดแต้มเมื่อเปิดแท็บ "แต้ม" (ยอดอาจเปลี่ยนจากการสแกน/แลกไปแล้ว)
   useEffect(() => {
-    if (tab !== 'points') return;
+    if (tab !== 'points' || coupon) return;
     getLoyaltyMe().then(setPoints).catch(() => {});
-  }, [tab]);
+  }, [tab, coupon]);
 
   // auto-refresh สถานะระหว่างติดตาม (US-11 ฝั่งลูกค้า)
   useEffect(() => {
@@ -213,6 +217,7 @@ export default function App() {
   const goTab = (t: Tab) => {
     setError('');
     setEarnOutcome(null); // ออกจากหน้าผลสแกน
+    setCoupon(null);
     // สั่งจบแล้ว (done/track) การกดแท็บ "เมนู" ต้องพากลับไปเริ่มสั่งใหม่
     // ไม่ใช่ค้างหน้า "สั่งสำเร็จ" ของออเดอร์เก่า — แต่ถ้ากำลังอยู่กลางตะกร้า/เช็คเอาต์ ให้คงไว้
     if (t === 'order' && (view === 'done' || view === 'track')) setView('menu');
@@ -395,9 +400,27 @@ export default function App() {
         )}
 
         {/* ── แท็บแต้ม (US-52) ── */}
-        {!earnOutcome && tab === 'points' && (points
-          ? <PointsTab data={points} />
-          : <div className="center"><div className="spinner" /></div>
+        {!earnOutcome && tab === 'points' && (coupon
+          ? <Coupon
+              initial={coupon}
+              onDone={() => {
+                setCoupon(null);
+                getLoyaltyMe().then(setPoints).catch(() => {}); // ยอดแต้ม/คูปองค้างเปลี่ยนไปแล้ว
+              }}
+            />
+          : points
+            ? <PointsTab
+                data={points}
+                onOpenPending={() => points.pending && setCoupon(points.pending)}
+                onRedeem={async (rewardId) => {
+                  try {
+                    setCoupon(await createRedemption(rewardId));
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              />
+            : <div className="center"><div className="spinner" /></div>
         )}
 
         {/* MENU */}

@@ -172,3 +172,17 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .tx-time { font-size: 11px; color: var(--muted); }
 .tx-points { font-size: 15px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
 .tx-points.minus { color: var(--red); }
+
+/* ── US-53: ของรางวัล + คูปอง ── */
+.reward-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.reward-row:last-of-type { border-bottom: none; }
+/* .btn เป็น width:100% — ต้องล้มเมื่ออยู่ในแถว ไม่งั้นดันชื่อรางวัลหาย */
+.reward-row .btn { width: auto; flex: 0 0 auto; padding: 9px 14px; font-size: 13px; white-space: nowrap; }
+
+.pending-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 1px solid var(--brand-primary, var(--accent)); }
+
+.coupon { text-align: center; }
+.coupon-name { font-size: 17px; font-weight: 700; }
+.coupon-qr { width: 220px; height: 220px; max-width: 100%; margin: 14px auto 6px; display: block; }
+.coupon-timer { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--brand-primary, var(--accent)); }
+.coupon-code { margin-top: 12px; font-family: ui-monospace, monospace; font-size: 19px; font-weight: 700; letter-spacing: 1px; background: var(--page); padding: 8px 12px; border-radius: 10px; }

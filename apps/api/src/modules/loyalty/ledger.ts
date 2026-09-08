@@ -15,7 +15,12 @@ export const REDEMPTION_TTL_MS = 10 * 60 * 1000;
  */
 export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 export const CODE_LENGTH = 16; // ~78 bit — เดาไม่ได้ในทางปฏิบัติ
-export const TOKEN_LENGTH = 24;
+/**
+ * token คูปอง 12 ตัว (~59 bit) — สั้นพอที่คนขายพิมพ์เองได้เมื่อกล้องสแกนไม่ติด
+ * (เป็นค่าเดียวกับที่อยู่ใน QR ไม่ต้องมีรหัสสำรองแยกอีกตัวให้สับสน)
+ * อายุแค่ 10 นาที + ต้องยิงผ่าน endpoint ที่ล็อกอินแอดมิน → เดาสุ่มไม่คุ้ม
+ */
+export const TOKEN_LENGTH = 12;
 
 /** จำนวนหลักในโค้ดต่อกลุ่ม เวลาโชว์ให้คนอ่าน/พิมพ์ */
 const GROUP = 4;

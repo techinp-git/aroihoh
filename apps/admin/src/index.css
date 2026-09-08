@@ -236,3 +236,11 @@ table.data tbody tr:hover { background: var(--surface-2); }
 @media (max-width: 480px) {
   .stats { grid-template-columns: 1fr; }
 }
+
+/* ── US-54: สแกนแลกแต้ม ── */
+.alert.success { background: var(--st-completed-bg, #dcfce7); color: var(--st-completed, #15803d); border-color: #bbf7d0; }
+.scan-video { width: 100%; max-width: 360px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: #000; display: block; }
+/* .btn เป็น width:100% กับ input เป็น width:100% — ต้องล้มทั้งคู่เมื่ออยู่ในแถวเดียวกัน */
+.scan-manual { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.scan-manual input { flex: 1 1 200px; width: auto; min-width: 0; text-transform: uppercase; }
+.scan-manual .btn { width: auto; flex: 0 0 auto; padding: 10px 16px; }

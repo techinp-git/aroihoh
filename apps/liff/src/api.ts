@@ -191,6 +191,29 @@ export const getLoyaltyMe = () => api<LoyaltyMe>('/loyalty/me');
 export const earnPoints = (code: string) =>
   api<EarnResult>('/loyalty/earn', { method: 'POST', body: JSON.stringify({ code }) });
 
+// US-53: รางวัล + คูปองแลกแต้ม
+export interface Reward {
+  id: string;
+  name: string;
+  description: string | null;
+  pointsCost: number;
+  type: 'free_item' | 'discount';
+  discountAmount: number | null;
+  affordable: boolean;
+}
+export const getRewards = () => api<{ balance: number; rewards: Reward[] }>('/loyalty/rewards');
+
+export const createRedemption = (rewardId: string) =>
+  api<PendingRedemption>('/loyalty/redemptions', {
+    method: 'POST',
+    body: JSON.stringify({ rewardId }),
+  });
+
+export const getRedemption = (id: string) => api<PendingRedemption>(`/loyalty/redemptions/${id}`);
+
+export const cancelRedemption = (id: string) =>
+  api<{ cancelled: boolean }>(`/loyalty/redemptions/${id}/cancel`, { method: 'POST' });
+
 /** US-60: เบอร์โทร (เก็บแบบเข้ารหัส) + เลือกรับ/ไม่รับข่าวสารเอง — ส่ง phone:'' เพื่อลบเบอร์ */
 export const updateProfile = (body: { phone?: string | null; marketingOptedOut?: boolean }) =>
   api<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(body) });

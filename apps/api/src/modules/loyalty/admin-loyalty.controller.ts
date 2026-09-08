@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
-import { BatchStatusDto, CreateBatchDto, CreateRewardDto } from './dto/loyalty.dto';
+import { BatchStatusDto, CreateBatchDto, CreateRewardDto, UpdateRewardDto } from './dto/loyalty.dto';
 import { AdminJwtGuard, type AdminJwt } from '../../common/guards/admin-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -54,6 +54,17 @@ export class AdminLoyaltyController {
   @Roles('owner', 'manager')
   createReward(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateRewardDto) {
     return this.loyalty.createReward(admin, dto);
+  }
+
+  @Patch('rewards/:id')
+  @Roles('owner', 'manager')
+  updateReward(
+    @CurrentAdmin() admin: AdminJwt,
+    @Query('brandId') brandId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateRewardDto,
+  ) {
+    return this.loyalty.updateReward(admin, brandId, id, dto);
   }
 
   @Get('rewards')

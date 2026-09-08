@@ -539,6 +539,30 @@ async function main() {
   });
   ok(crossBatch.status === 403 || crossBatch.status === 404, 'สร้างล็อตข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${crossBatch.status}`);
 
+  // US-53/54: ยืนยันด้วย "รหัสที่พิมพ์เอง" (ตัวเล็ก+มีขีด) — เส้นสำรองเมื่อกล้องสแกนไม่ติด
+  await req('POST', '/loyalty/earn', { token: loyToken, body: { code: codes[2].code } }); // +10
+  const rwTyped = await req('POST', '/admin/loyalty/rewards', {
+    token: adminToken, body: { brandId, name: 'E2E รางวัลพิมพ์รหัส', pointsCost: 10 },
+  });
+  const redTyped = await req('POST', '/loyalty/redemptions', { token: loyToken, body: { rewardId: rwTyped.body?.id } });
+  ok(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(redTyped.body?.code || ''), 'คูปองมีรหัสสั้น 3 กลุ่มให้พิมพ์เอง', redTyped.body?.code);
+  const previewTyped = await req('GET', `/admin/loyalty/redemptions/${redTyped.body.code.toLowerCase()}`, { token: adminToken });
+  ok(is2xx(previewTyped.status) && previewTyped.body?.confirmable === true, 'preview ด้วยรหัสตัวเล็ก+มีขีด ใช้ได้', `ได้ ${previewTyped.status}`);
+  const confirmTyped = await req('POST', `/admin/loyalty/redemptions/${redTyped.body.code.toLowerCase()}/confirm`, { token: adminToken });
+  ok(is2xx(confirmTyped.status) && confirmTyped.body?.balance === 0, 'ยืนยันด้วยรหัสที่พิมพ์เอง → ตัดแต้มสำเร็จ', JSON.stringify(confirmTyped.body));
+
+  // US-53: ปิดรางวัล → ลูกค้าไม่เห็นในลิสต์อีก
+  const off = await req('PATCH', `/admin/loyalty/rewards/${rwTyped.body?.id}?brandId=${brandId}`, {
+    token: adminToken, body: { isActive: false },
+  });
+  ok(is2xx(off.status) && off.body?.isActive === false, 'ปิดรางวัลได้ (PATCH)');
+  const rwAfterOff = await req('GET', '/loyalty/rewards', { token: loyToken });
+  ok(!(rwAfterOff.body?.rewards || []).some((r) => r.id === rwTyped.body?.id), 'รางวัลที่ปิดแล้วหายจากลิสต์ฝั่งลูกค้า');
+  const offCross = await req('PATCH', `/admin/loyalty/rewards/${rwTyped.body?.id}?brandId=${newBrandId}`, {
+    token: adminToken, body: { isActive: true },
+  });
+  ok(offCross.status === 403 || offCross.status === 404, 'แก้รางวัลข้ามแบรนด์ถูกปฏิเสธ', `ได้ ${offCross.status}`);
+
   // การ์ดแต้มโผล่ในโปรไฟล์แล้ว (US-59 ผูกกับค่านี้)
   const profLoyalty = await req('GET', '/me/profile', { token: loyToken });
   ok(profLoyalty.body?.loyalty?.balance === 0, '/me/profile คืน loyalty แล้ว (แท็บแต้มใน LIFF ติดขึ้นมา)', JSON.stringify(profLoyalty.body?.loyalty));

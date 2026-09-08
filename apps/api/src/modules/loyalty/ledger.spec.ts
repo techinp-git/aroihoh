@@ -25,6 +25,8 @@ describe('generateCode / generateToken', () => {
 
     const token = generateToken(bytes(32));
     expect(token).toHaveLength(TOKEN_LENGTH);
+    // สั้นพอให้คนขายพิมพ์เองได้ (3 กลุ่มละ 4)
+    expect(formatCodeForHuman(token)).toHaveLength(TOKEN_LENGTH + 2);
   });
 
   it('ไม่มีตัวที่คนอ่านสับสน (0 O 1 I L)', () => {
@@ -33,7 +35,7 @@ describe('generateCode / generateToken', () => {
 
   it('bytes ไม่พอ → โยน error แทนที่จะออกโค้ดสั้นกว่าที่ควร', () => {
     expect(() => generateCode(bytes(4))).toThrow();
-    expect(() => generateToken(bytes(10))).toThrow();
+    expect(() => generateToken(bytes(6))).toThrow();
   });
 
   it('bytes ต่างกัน → โค้ดต่างกัน', () => {

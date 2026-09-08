@@ -1,8 +1,9 @@
-import type { LoyaltyMe, LoyaltyTx } from './api';
+import { useEffect, useState } from 'react';
+import { baht, getRewards, type LoyaltyMe, type LoyaltyTx, type Reward } from './api';
 
 /**
  * US-52: แท็บ "แต้ม" — ยอดแต้ม + ความคืบหน้าไปรางวัลถัดไป + ประวัติ
- * การเลือกรางวัล/ออกคูปอง QR เป็นของ US-53
+ * US-53: + รายการของรางวัล กดแลกแล้วได้คูปอง QR
  */
 
 const TX_LABEL: Record<LoyaltyTx['type'], string> = {
@@ -66,7 +67,32 @@ export type EarnOutcome =
   | { kind: 'ok'; earned: number; balance: number; nextText?: string }
   | { kind: 'used' | 'invalid' | 'error'; title: string; detail: string };
 
-export default function PointsTab({ data }: { data: LoyaltyMe }) {
+export default function PointsTab({
+  data,
+  onRedeem,
+  onOpenPending,
+}: {
+  data: LoyaltyMe;
+  onRedeem: (rewardId: string) => Promise<void>;
+  onOpenPending: () => void;
+}) {
+  const [rewards, setRewards] = useState<Reward[] | null>(null);
+  const [busyId, setBusyId] = useState('');
+
+  useEffect(() => {
+    getRewards().then((r) => setRewards(r.rewards)).catch(() => setRewards([]));
+  }, [data.balance]);
+
+  const redeem = async (r: Reward) => {
+    if (!confirm(`ใช้ ${r.pointsCost} แต้ม แลก ${r.name}?`)) return;
+    setBusyId(r.id);
+    try {
+      await onRedeem(r.id);
+    } finally {
+      setBusyId('');
+    }
+  };
+
   const next = data.nextReward;
   const need = next ? Math.max(0, next.pointsCost - data.balance) : 0;
   const pct = next && next.pointsCost > 0
@@ -93,15 +119,45 @@ export default function PointsTab({ data }: { data: LoyaltyMe }) {
       </div>
 
       {data.pending && (
-        <div className="card">
-          <h3>คูปองที่รออยู่</h3>
-          <div className="line" style={{ padding: '2px 0' }}>
-            <span>{data.pending.rewardName}</span>
-            <span>{data.pending.pointsCost} แต้ม</span>
+        <button className="card pending-card" onClick={onOpenPending}>
+          <div>
+            <div className="tx-label">🎟️ คูปองที่รออยู่: {data.pending.rewardName}</div>
+            <div className="desc">แตะเพื่อเปิด QR ให้พนักงานสแกน</div>
           </div>
-          <div className="desc">ยื่นให้พนักงานสแกน · รหัส {data.pending.code}</div>
-        </div>
+          <span className="addr-go">›</span>
+        </button>
       )}
+
+      <div className="card">
+        <h3>ของรางวัล</h3>
+        {rewards === null && <div className="empty">กำลังโหลด…</div>}
+        {rewards?.length === 0 && <div className="empty">ร้านยังไม่ได้ตั้งของรางวัล</div>}
+        {rewards?.map((r) => (
+          <div key={r.id} className="reward-row">
+            <div className="addr-main">
+              <span className="addr-label">{r.name}</span>
+              {r.description && <span className="addr-detail">{r.description}</span>}
+              {r.type === 'discount' && r.discountAmount != null && (
+                <span className="addr-detail">ส่วนลด {baht(r.discountAmount)}</span>
+              )}
+            </div>
+            <button
+              className={'btn ' + (r.affordable ? 'primary' : 'ghost')}
+              disabled={!r.affordable || !!busyId || !!data.pending}
+              onClick={() => redeem(r)}
+            >
+              {busyId === r.id
+                ? <div className="spinner" />
+                : r.affordable
+                  ? `แลก · ${r.pointsCost}`
+                  : `อีก ${r.pointsCost - data.balance} แต้ม`}
+            </button>
+          </div>
+        ))}
+        {data.pending && rewards && rewards.length > 0 && (
+          <div className="desc">มีคูปองค้างอยู่ 1 ใบ — ใช้หรือยกเลิกก่อนถึงแลกใบใหม่ได้</div>
+        )}
+      </div>
 
       <div className="card">
         <h3>ประวัติแต้ม</h3>

@@ -186,7 +186,8 @@ export class LoyaltyService {
     return {
       id: r.id,
       token: r.token,
-      code: formatCodeForHuman(r.token.slice(0, 8)), // รหัสสำรองให้พิมพ์เมื่อกล้องสแกนไม่ติด
+      // รหัสที่โชว์ให้คนอ่าน = token เดียวกับที่อยู่ใน QR (คนขายพิมพ์เองได้เมื่อกล้องไม่ติด)
+      code: formatCodeForHuman(r.token),
       rewardName: r.rewardName,
       pointsCost: r.pointsCost,
       status: r.status,
@@ -368,6 +369,21 @@ export class LoyaltyService {
     });
   }
 
+  async updateReward(
+    admin: AdminJwt,
+    brandId: string,
+    id: string,
+    dto: Partial<{ name: string; description: string; pointsCost: number; isActive: boolean; sortOrder: number; discountAmount: number; menuItemId: string }>,
+  ) {
+    assertBrandAccess(admin, brandId);
+    const done = await this.prisma.loyaltyReward.updateMany({
+      where: { id, brandId },
+      data: dto,
+    });
+    if (done.count === 0) throw new NotFoundException('ไม่พบรางวัลนี้');
+    return this.prisma.loyaltyReward.findUnique({ where: { id } });
+  }
+
   async listAdminRewards(admin: AdminJwt, brandId: string) {
     assertBrandAccess(admin, brandId);
     return this.prisma.loyaltyReward.findMany({
@@ -377,7 +393,9 @@ export class LoyaltyService {
   }
 
   /** คนขายสแกนแล้วเห็นก่อนกดยืนยัน — ยังไม่แตะแต้ม */
-  async previewRedemption(admin: AdminJwt, token: string) {
+  async previewRedemption(admin: AdminJwt, rawToken: string) {
+    // คนขายอาจพิมพ์เอง "k7qx-2m9f-3btp" → ปรับให้ตรงกับที่เก็บใน DB ก่อนค้น
+    const token = normalizeCode(rawToken ?? '');
     const r = await this.prisma.loyaltyRedemption.findUnique({
       where: { token },
       include: { customer: { select: { displayName: true, pointsBalance: true } } },
@@ -406,7 +424,8 @@ export class LoyaltyService {
    * ตัดด้วย conditional update (WHERE pointsBalance >= cost) → ยอดแต้มติดลบไม่ได้แม้ยิงพร้อมกัน
    * แล้วค่อยจอง redemption (WHERE status='pending') → กดยืนยันซ้ำ/สองเครื่องพร้อมกัน ตัดแต้มครั้งเดียว
    */
-  async confirmRedemption(admin: AdminJwt, token: string) {
+  async confirmRedemption(admin: AdminJwt, rawToken: string) {
+    const token = normalizeCode(rawToken ?? '');
     const found = await this.prisma.loyaltyRedemption.findUnique({ where: { token } });
     if (!found) throw new NotFoundException('ไม่พบคูปองนี้');
     assertBrandAccess(admin, found.brandId);

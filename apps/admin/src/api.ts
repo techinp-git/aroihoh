@@ -519,3 +519,55 @@ export function nextStatus(s: string): string | null {
   const i = (ORDER_STATUS_FLOW as readonly string[]).indexOf(s);
   return i >= 0 && i < ORDER_STATUS_FLOW.length - 1 ? ORDER_STATUS_FLOW[i + 1] : null;
 }
+
+// ── EP-14 Loyalty: รางวัล + ยืนยันแลกแต้ม (US-53/54) ──
+export interface LoyaltyReward {
+  id: string;
+  name: string;
+  description: string | null;
+  pointsCost: number;
+  type: 'free_item' | 'discount';
+  discountAmount: number | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+export interface RedemptionPreview {
+  id: string;
+  brandId: string;
+  customerName: string | null;
+  balance: number;
+  rewardName: string;
+  pointsCost: number;
+  status: 'pending' | 'confirmed' | 'expired' | 'cancelled';
+  expiresAt: string;
+  /** true = กดยืนยันได้เลย (ยัง pending, ไม่หมดอายุ, แต้มพอ) */
+  confirmable: boolean;
+}
+
+export const listLoyaltyRewards = (brandId: string) =>
+  adminFetch<LoyaltyReward[]>(`/admin/loyalty/rewards?brandId=${encodeURIComponent(brandId)}`);
+
+export const createLoyaltyReward = (body: {
+  brandId: string; name: string; pointsCost: number; description?: string;
+  type?: 'free_item' | 'discount'; discountAmount?: number;
+}) => adminFetch<LoyaltyReward>('/admin/loyalty/rewards', { method: 'POST', body: JSON.stringify(body) });
+
+export const updateLoyaltyReward = (
+  brandId: string,
+  id: string,
+  body: Partial<{ name: string; pointsCost: number; description: string; isActive: boolean; discountAmount: number }>,
+) =>
+  adminFetch<LoyaltyReward>(
+    `/admin/loyalty/rewards/${id}?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  );
+
+// brandId ไม่ต้องส่ง — server อ่านจากตัวคูปองแล้วเช็คสิทธิ์เอง (กันข้ามแบรนด์)
+export const previewRedemption = (token: string) =>
+  adminFetch<RedemptionPreview>(`/admin/loyalty/redemptions/${encodeURIComponent(token)}`);
+
+export const confirmRedemption = (token: string) =>
+  adminFetch<{ confirmed: boolean; rewardName: string; pointsSpent: number; balance: number }>(
+    `/admin/loyalty/redemptions/${encodeURIComponent(token)}/confirm`,
+    { method: 'POST' },
+  );

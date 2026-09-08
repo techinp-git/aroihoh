@@ -17,8 +17,9 @@ import Chat from './views/Chat';
 import Broadcast from './views/Broadcast';
 import Users from './views/Users';
 import Settings from './views/Settings';
+import Loyalty from './views/Loyalty';
 
-type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'users' | 'settings';
+type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'loyalty' | 'users' | 'settings';
 
 // US-45: แต่ละเมนูโชว์เฉพาะ role ที่ระบุ (kitchen เห็นแค่ KDS, chat_agent เห็นแค่แชต)
 type Role = 'owner' | 'manager' | 'staff' | 'kitchen' | 'chat_agent';
@@ -30,6 +31,8 @@ const NAV: { key: View; label: string; ic: string; roles: Role[] }[] = [
   { key: 'broadcast', label: 'ส่งข่าวสาร', ic: '📣', roles: ['owner', 'manager'] },
   { key: 'menu', label: 'เมนู', ic: '🍜', roles: ['owner', 'manager', 'staff'] },
   { key: 'customers', label: 'ลูกค้า', ic: '👤', roles: ['owner', 'manager', 'staff'] },
+  // US-54: คนขาย (staff) ต้องกดยืนยันแลกแต้มเองได้ ไม่ต้องตาม manager
+  { key: 'loyalty', label: 'สะสมแต้ม', ic: '🎯', roles: ['owner', 'manager', 'staff'] },
   { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', roles: ['owner'] },
   { key: 'settings', label: 'ตั้งค่า', ic: '⚙️', roles: ['owner', 'manager'] },
 ];
@@ -42,6 +45,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   chat: { title: 'แชต', sub: 'ตอบลูกค้า (US-21) — ส่งเข้า LINE เมื่อเชื่อม SETUP-1' },
   broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-18)' },
   customers: { title: 'ลูกค้า', sub: 'รายชื่อ + ประวัติออเดอร์ + ยอดใช้จ่าย' },
+  loyalty: { title: 'สะสมแต้ม', sub: 'สแกนคูปองแลกแต้ม + จัดการของรางวัล (US-53/54)' },
   users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
   settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },
 };
@@ -224,6 +228,9 @@ export default function App() {
           {view === 'chat' && <Chat />} {/* US-40: inbox เดียวรวมทุกแบรนด์ */}
           {view === 'broadcast' && <Broadcast brandId={brandId} />}
           {view === 'customers' && <Customers brandId={brandId} />}
+          {view === 'loyalty' && (
+            <Loyalty brandId={brandId} canManage={profile.role === 'owner' || profile.role === 'manager'} />
+          )}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}
           {view === 'settings' && (
             <Settings
