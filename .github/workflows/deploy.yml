@@ -1,0 +1,102 @@
+name: Deploy
+
+# CD แบบ B: build image → push GHCR → VPS pull
+# ทำงานเมื่อ workflow "CI" (build+e2e) จบแบบสำเร็จบน main เท่านั้น — ไม่ deploy โค้ดที่เทสต์ไม่ผ่าน
+# หรือกดเองผ่านปุ่ม Run workflow (workflow_dispatch)
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/${{ github.repository }}-api
+  IMAGE_STATIC: ghcr.io/${{ github.repository }}-static
+
+jobs:
+  build-push:
+    # deploy เฉพาะเมื่อ CI ผ่าน (หรือกดเอง)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+    steps:
+      - name: resolve sha ที่จะ build (จาก CI run ที่ trigger หรือ head ปัจจุบัน)
+        id: vars
+        run: echo "tag=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.tag }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build+push api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_API }}:latest
+            ${{ env.IMAGE_API }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: build+push static image (liff + admin, ฝัง VITE_*)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/static.Dockerfile
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_LIFF_ID=${{ vars.VITE_LIFF_ID }}
+            VITE_PRIVACY_URL=${{ vars.VITE_PRIVACY_URL }}
+            VITE_BRAND_ID=${{ vars.VITE_BRAND_ID }}
+          tags: |
+            ${{ env.IMAGE_STATIC }}:latest
+            ${{ env.IMAGE_STATIC }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha,scope=static
+          cache-to: type=gha,mode=max,scope=static
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: SSH → VPS pull + restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: TAG,CR_PAT,GHCR_USER
+          script: |
+            set -euo pipefail
+            # login GHCR (package เป็น private) — ถ้าทำ package public ตัด 3 บรรทัดนี้ทิ้งได้
+            echo "$CR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            cd /opt/aroihoh
+            git pull --ff-only            # ดึงเฉพาะ compose + scripts + migrations (ไม่ build)
+            bash scripts/deploy.sh "$TAG"
+        env:
+          TAG: ${{ needs.build-push.outputs.tag }}
+          CR_PAT: ${{ secrets.CR_PAT }}
+          GHCR_USER: ${{ github.actor }}
