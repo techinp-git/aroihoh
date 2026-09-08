@@ -113,7 +113,53 @@ sudo systemctl reload caddy
 
 ---
 
-## Deploy รอบถัดไป (มีโค้ดใหม่)
+## CD อัตโนมัติ (GHCR image + pull) — แนะนำ
+
+แทนที่จะ build บนเครื่อง prod (CX22 RAM 4GB หนัก) ให้ **CI build image แล้ว push ขึ้น GHCR → VPS แค่ pull**
+โฟลว์: push `main` → CI (`ci.yml`) ผ่าน → `deploy.yml` build 2 image (`aroihoh-api`, `aroihoh-static`) push GHCR → SSH เข้า VPS รัน `scripts/deploy.sh`
+
+### ตั้งครั้งเดียว (ฝั่ง GitHub repo)
+
+> 📋 checklist ไล่ทีละขั้น (สร้าง SSH key/PAT + คำสั่งเทสต์): [`cd-secrets-checklist.md`](cd-secrets-checklist.md)
+
+**Settings → Secrets and variables → Actions**
+
+Secrets (ความลับ):
+| ชื่อ | ค่า |
+|---|---|
+| `SSH_HOST` | `49.13.57.24` |
+| `SSH_USER` | `root` (หรือ user ที่ deploy) |
+| `SSH_KEY` | private key (ตัว public key ต้องอยู่ใน `~/.ssh/authorized_keys` บน VPS) |
+| `SSH_PORT` | *(ไม่ตั้งก็ได้ = 22)* |
+| `CR_PAT` | GitHub PAT (classic) scope **`read:packages`** — VPS ใช้ login GHCR ตอน pull |
+
+Variables (ไม่ลับ — ฝังตอน build static, ต้องมี ไม่งั้น LIFF พัง):
+| ชื่อ | ค่า |
+|---|---|
+| `VITE_API_BASE_URL` | `https://aroihoh-api.jivecode.click/api` (⚠️ ต้องมี `/api`) |
+| `VITE_LIFF_ID` | LIFF ID ของแบรนด์ (⚠️ ลืม = LIFF ตกไป dev-login → 403) |
+| `VITE_PRIVACY_URL` | URL นโยบายความเป็นส่วนตัว *(เว้นได้ = ไม่โชว์ลิงก์)* |
+| `VITE_BRAND_ID` | brandId ดีฟอลต์ *(เว้นได้ ถ้าใช้ `?brandId=` ที่ LIFF endpoint)* |
+
+### ตั้งครั้งเดียว (ฝั่ง VPS)
+
+โค้ดต้องอยู่ที่ `/opt/aroihoh` (มี `.env.prod` ครบตามข้อ 2 ด้านบน) — VPS `git pull` เฉพาะ compose/scripts/migrations ไม่ build
+> **package บน GHCR เริ่มต้นเป็น private** → workflow login ให้อัตโนมัติผ่าน `CR_PAT` แล้ว
+> ถ้าอยากง่ายกว่า: เปิด package เป็น **public** (GitHub → Packages → package settings → Change visibility) แล้วตัด `CR_PAT` + บรรทัด `docker login` ใน `deploy.yml` ทิ้งได้
+
+### deploy
+
+- **อัตโนมัติ**: push เข้า `main` → CI ผ่าน → deploy เอง
+- **กดเอง**: GitHub → Actions → *Deploy* → Run workflow
+- **รันบน VPS ตรง ๆ** (ไม่พึ่ง GitHub): `cd /opt/aroihoh && bash scripts/deploy.sh <sha|latest>`
+- **rollback**: `bash scripts/deploy.sh <sha เก่า>` (image เก่ายังอยู่บน GHCR ตาม tag sha)
+
+> `deploy.sh` = pull api+static image ตาม tag → `docker cp` static ไป `/var/www` → `up -d` (ไม่ build) → `prisma migrate deploy` → health check `/api/health` → prune
+> seed **ไม่อยู่ใน** deploy.sh (กันรันซ้ำทับข้อมูลจริง) — รันมือครั้งแรกครั้งเดียวตามข้อ 4
+
+---
+
+## Deploy รอบถัดไป (แบบ manual — ถ้าไม่ใช้ CD)
 
 ```bash
 cd /opt/aroihoh && git pull

@@ -1,0 +1,11 @@
+# dockerignore เฉพาะของ deploy/static.Dockerfile (BuildKit ใช้ไฟล์นี้แทน root .dockerignore)
+# ต่างจาก root ตรงที่ "ไม่" ตัด apps/liff, apps/admin ทิ้ง — static image ต้องใช้
+node_modules
+**/node_modules
+**/dist
+.git
+.github
+docs
+**/.env
+**/.env.*
+!**/.env.example

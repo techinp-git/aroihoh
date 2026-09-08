@@ -23,6 +23,9 @@ services:
       retries: 10
 
   api:
+    # CD: ดึง image สำเร็จรูปจาก GHCR (deploy.sh ตั้ง AROIHOH_TAG=<sha> ก่อน pull/up)
+    # build: ยังอยู่เพื่อ fallback ตอน build เองบนเครื่อง (`up -d --build`) — deploy ปกติไม่ใช้
+    image: ghcr.io/techinp-git/aroihoh-api:${AROIHOH_TAG:-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
