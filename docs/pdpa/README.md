@@ -38,7 +38,7 @@ SELECT count(*) FROM customers WHERE "marketingConsentSource" = 'legacy';
 - ประวัติการสั่งและเอกสารบัญชี: **5 ปี**
 - ข้อความแชต: **12 เดือน**
 
-บังคับด้วย `prisma/pdpa-retention.ts` (cron ตี 4 ทุกวัน) · ตัวเลขอยู่ใน `src/modules/pdpa/retention.ts`
+บังคับด้วย `src/modules/pdpa/retention.cli.ts` (cron ตี 4 ทุกวัน — รันจาก `dist`) · ตัวเลขอยู่ใน `src/modules/pdpa/retention.ts`
 ⚠️ **แก้ตัวเลขที่นั่นแล้วต้องแก้ในนโยบายที่เผยแพร่ด้วย** ไม่งั้นบอกลูกค้าอย่างทำอีกอย่าง
 
 ⚠️ ผลข้างเคียงที่ต้องบอกลูกค้า: **แต้มสะสมหมดอายุพร้อมบัญชี** เมื่อเงียบเกิน 12 เดือน

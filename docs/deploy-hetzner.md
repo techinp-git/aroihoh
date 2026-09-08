@@ -188,8 +188,9 @@ grep -o "https://aroihoh-api[^\"]*" /var/www/aroihoh-admin/assets/*.js | head -1
 ( crontab -l 2>/dev/null; echo "0 3 * * * /opt/aroihoh/scripts/backup.sh >> /opt/backups/backup.log 2>&1" ) | crontab -
 
 # PDPA: ลบข้อมูลที่หมดอายุตามนโยบาย ตี 4 ทุกวัน (หลัง backup เสร็จ — จะได้มีสำเนาก่อนลบ)
-# ⚠️ ลองแบบ dry-run ก่อนเสมอ (ตัด --apply ออก) แล้วอ่าน log ว่าจะแตะข้อมูลกี่รายการ
-( crontab -l 2>/dev/null; echo "0 4 * * * cd /opt/aroihoh && docker compose exec -T api npx ts-node -O '{\"module\":\"commonjs\"}' prisma/pdpa-retention.ts --apply >> /root/pdpa-retention.log 2>&1" ) | crontab -
+# ลองแบบ dry-run ก่อนเสมอ (ตัด --apply ออก) แล้วอ่านว่าจะแตะข้อมูลกี่รายการ:
+#   docker compose exec -T api node dist/modules/pdpa/retention.cli.js
+( crontab -l 2>/dev/null; echo "0 4 * * * cd /opt/aroihoh && docker compose exec -T api node dist/modules/pdpa/retention.cli.js --apply >> /root/pdpa-retention.log 2>&1" ) | crontab -
 /opt/aroihoh/scripts/backup.sh   # รันมือทดสอบ 1 รอบ
 ```
 วิธีกู้คืนอยู่หัวไฟล์ `scripts/backup.sh` · + เปิด Hetzner snapshot ของ disk เป็นชั้นสอง
