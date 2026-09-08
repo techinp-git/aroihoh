@@ -1,0 +1,53 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="chimcheva">
+  <defs>
+    <linearGradient id="clay" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C56A38"/>
+      <stop offset="1" stop-color="#A94E22"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="#ffffff"/>
+
+  <!-- ===== bento tray line-art (terracotta) ===== -->
+  <g fill="none" stroke="url(#clay)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <!-- outer frame -->
+    <rect x="70" y="78" width="372" height="372" rx="92"/>
+
+    <!-- face compartment (top-left) -->
+    <rect x="104" y="112" width="168" height="150" rx="30"/>
+    <!-- right compartment (tall) -->
+    <rect x="296" y="112" width="112" height="238" rx="30"/>
+    <!-- bottom-left compartment (wide) -->
+    <rect x="104" y="286" width="168" height="130" rx="30"/>
+    <!-- bottom-right small compartment -->
+    <rect x="296" y="374" width="112" height="42" rx="21"/>
+
+    <!-- face features -->
+    <path d="M150 172 q9 -13 18 0"/>
+    <path d="M196 172 q9 -13 18 0"/>
+    <path d="M186 182 q9 9 -3 15"/>
+    <path d="M158 208 q30 24 60 0"/>
+
+    <!-- chopsticks in right cell -->
+    <line x1="322" y1="322" x2="392" y2="150"/>
+    <line x1="346" y1="330" x2="404" y2="176"/>
+
+    <!-- spoon in bottom-left cell -->
+    <ellipse cx="150" cy="332" rx="34" ry="23"/>
+    <line x1="176" y1="348" x2="228" y2="398"/>
+  </g>
+
+  <!-- freckles / sesame -->
+  <g fill="#B95A2B">
+    <circle cx="238" cy="168" r="4.5"/>
+    <circle cx="248" cy="182" r="4.5"/>
+    <circle cx="236" cy="194" r="4.5"/>
+  </g>
+
+  <!-- ===== leaf (overlapping top-right) ===== -->
+  <g>
+    <path d="M356 128 C372 74 402 46 438 34 C420 84 396 116 356 128 Z" fill="#43552F"/>
+    <path d="M438 34 C420 84 396 116 356 128 C384 108 408 74 438 34 Z" fill="#313F26"/>
+    <path d="M438 34 L360 126" fill="none" stroke="#273420" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>
