@@ -5,6 +5,7 @@ import {
   createAddress,
   deleteAddress,
   updateAddress,
+  updateProfile,
   type DeliveryOrigin,
   type Profile,
   type SavedAddress,
@@ -12,8 +13,14 @@ import {
 
 /**
  * US-59: แท็บโปรไฟล์ — avatar/ชื่อ · การ์ดแต้ม (EP-14) · สมุดที่อยู่ · ออเดอร์ล่าสุด
- * ส่วน "ตั้งค่า" (เบอร์โทร / รับข่าวสาร / privacy policy) อยู่ใน US-60
+ * US-60: + ตั้งค่า (เบอร์โทร / รับข่าวสาร / นโยบายความเป็นส่วนตัว)
  */
+
+/**
+ * ลิงก์นโยบายความเป็นส่วนตัว — ยังไม่มีเอกสาร PDPA (blocker ที่รู้อยู่)
+ * ไม่ตั้ง env = ไม่โชว์ลิงก์ ดีกว่าพาลูกค้าไปหน้า 404 หรือชี้ URL ที่ยังไม่มีจริง
+ */
+const PRIVACY_URL = (import.meta.env.VITE_PRIVACY_URL as string | undefined) || '';
 
 /** ป้ายสำเร็จรูป — คนส่วนใหญ่มีแค่ 2 ที่ ไม่ต้องให้พิมพ์เอง */
 const PRESETS = [
@@ -46,18 +53,51 @@ export default function ProfileTab({
   profile,
   origin,
   onAddresses,
+  onProfile,
   onOpenOrder,
   onStartOrdering,
 }: {
   profile: Profile;
   origin: DeliveryOrigin | null;
   onAddresses: (list: SavedAddress[]) => void;
+  onProfile: (p: Profile) => void;
   onOpenOrder: (orderId: string) => void;
   onStartOrdering: () => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  // US-60 ตั้งค่า
+  const [phone, setPhone] = useState('');
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [phoneMsg, setPhoneMsg] = useState('');
+  const [optBusy, setOptBusy] = useState(false);
+
+  const savePhone = async (value: string | null) => {
+    setPhoneBusy(true);
+    setPhoneMsg('');
+    try {
+      onProfile(await updateProfile({ phone: value }));
+      setPhone('');
+      setPhoneMsg(value ? 'บันทึกเบอร์แล้ว' : 'ลบเบอร์แล้ว');
+    } catch (e) {
+      setPhoneMsg((e as Error).message);
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const toggleMarketing = async (wantNews: boolean) => {
+    setOptBusy(true);
+    try {
+      onProfile(await updateProfile({ marketingOptedOut: !wantNews }));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setOptBusy(false);
+    }
+  };
 
   const full = profile.addresses.length >= profile.addressLimit;
 
@@ -275,6 +315,58 @@ export default function ProfileTab({
         <button className="btn ghost" onClick={onStartOrdering} style={{ marginTop: 10 }}>
           สั่งอาหาร
         </button>
+      </div>
+
+      {/* US-60: ตั้งค่าของลูกค้าเอง */}
+      <div className="card">
+        <h3>ตั้งค่า</h3>
+
+        <label className="fld">เบอร์โทรให้ไรเดอร์ติดต่อ</label>
+        {profile.hasPhone && (
+          <div className="setting-row">
+            <span className="desc">บันทึกไว้แล้ว ลงท้าย ••{profile.phoneLast4}</span>
+            <button className="linkbtn" onClick={() => savePhone('')} disabled={phoneBusy}>ลบ</button>
+          </div>
+        )}
+        <div className="picker-search">
+          <input
+            type="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder={profile.hasPhone ? 'เปลี่ยนเป็นเบอร์ใหม่' : '08X-XXX-XXXX'}
+          />
+          <button
+            className="btn ghost"
+            onClick={() => savePhone(phone)}
+            disabled={phoneBusy || !phone.trim()}
+          >
+            {phoneBusy ? <div className="spinner" /> : 'บันทึก'}
+          </button>
+        </div>
+        {phoneMsg && <div className="picker-note">{phoneMsg}</div>}
+
+        <div className="setting-row" style={{ marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>รับข่าวสารและโปรโมชัน</div>
+            <div className="desc">ปิดแล้วเราจะไม่ส่งข้อความโปรโมชันหาคุณอีก</div>
+          </div>
+          <button
+            className={'toggle' + (profile.marketingOptedOut ? '' : ' on')}
+            onClick={() => toggleMarketing(profile.marketingOptedOut)}
+            disabled={optBusy}
+            aria-pressed={!profile.marketingOptedOut}
+            aria-label="รับข่าวสารและโปรโมชัน"
+          >
+            <span className="knob" />
+          </button>
+        </div>
+
+        {PRIVACY_URL && (
+          <a className="privacy" href={PRIVACY_URL} target="_blank" rel="noreferrer">
+            นโยบายความเป็นส่วนตัว ›
+          </a>
+        )}
       </div>
     </>
   );

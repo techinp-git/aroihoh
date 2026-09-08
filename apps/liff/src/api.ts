@@ -151,6 +151,10 @@ export interface AddressInput {
 
 export const getProfile = () => api<Profile>('/me/profile');
 
+/** US-60: เบอร์โทร (เก็บแบบเข้ารหัส) + เลือกรับ/ไม่รับข่าวสารเอง — ส่ง phone:'' เพื่อลบเบอร์ */
+export const updateProfile = (body: { phone?: string | null; marketingOptedOut?: boolean }) =>
+  api<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
+
 export const createAddress = (body: AddressInput) =>
   api<AddressBook & { created: string }>('/me/addresses', {
     method: 'POST',

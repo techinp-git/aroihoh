@@ -36,6 +36,7 @@ export class CustomersService {
         // หมุดที่ลูกค้าลบไปแล้ว (deletedAt) ไม่ต้องโชว์ — ป้ายแยก saved/snapshot ทำใน US-60
         addresses: {
           where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
           select: {
             id: true,
             label: true,

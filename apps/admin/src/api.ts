@@ -313,7 +313,11 @@ export interface CustomerRow {
   orderCount: number; totalSpent: number; lastOrderAt: string | null;
 }
 export interface CustomerDetail extends CustomerRow {
-  addresses: { id: string; label: string | null; detail: string; lat: number; lng: number }[];
+  // US-58: isSaved แยก "สมุดที่อยู่ของลูกค้า" ออกจาก "ที่อยู่ที่ติดมากับออเดอร์" (snapshot)
+  addresses: {
+    id: string; label: string | null; detail: string; note: string | null;
+    lat: number; lng: number; isSaved: boolean;
+  }[];
   orders: Order[];
 }
 

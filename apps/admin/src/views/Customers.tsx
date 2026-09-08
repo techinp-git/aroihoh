@@ -124,16 +124,47 @@ export default function Customers({ brandId }: { brandId: string }) {
           </div>
         </div>
 
-        {detail.addresses.length > 0 && (
-          <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-            <div className="stat-label" style={{ marginBottom: 8 }}>ที่อยู่จัดส่ง</div>
-            {detail.addresses.map((a) => (
-              <div key={a.id} style={{ fontSize: 13, marginBottom: 4 }}>
-                📍 {a.label ? `${a.label}: ` : ''}{a.detail}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* US-58/60: แยกสมุดที่อยู่ของลูกค้า ออกจากที่อยู่ที่ติดมากับแต่ละออเดอร์
+            ลูกค้าประจำมี snapshot สะสมเป็นสิบแถว ถ้าเทกองรวมกันจะหาที่อยู่จริงไม่เจอ */}
+        {detail.addresses.length > 0 && (() => {
+          const saved = detail.addresses.filter((a) => a.isSaved);
+          const snapshots = detail.addresses.filter((a) => !a.isSaved);
+          const SHOW = 5;
+          return (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              {saved.length > 0 && (
+                <>
+                  <div className="stat-label" style={{ marginBottom: 8 }}>สมุดที่อยู่ของลูกค้า</div>
+                  {saved.map((a) => (
+                    <div key={a.id} style={{ fontSize: 13, marginBottom: 6 }}>
+                      📍 {a.label ? <b>{a.label}: </b> : ''}{a.detail}
+                      {a.note && <span style={{ color: '#6b7280' }}> · {a.note}</span>}
+                      <span className="pill" style={{ marginLeft: 6 }}>บันทึกไว้</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {snapshots.length > 0 && (
+                <>
+                  <div className="stat-label" style={{ marginBottom: 8, marginTop: saved.length ? 14 : 0 }}>
+                    ที่อยู่จากออเดอร์ ({snapshots.length})
+                  </div>
+                  {snapshots.slice(0, SHOW).map((a) => (
+                    <div key={a.id} style={{ fontSize: 13, marginBottom: 4 }}>
+                      📍 {a.label ? `${a.label}: ` : ''}{a.detail}
+                      {a.note && <span style={{ color: '#6b7280' }}> · {a.note}</span>}
+                    </div>
+                  ))}
+                  {snapshots.length > SHOW && (
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                      และอีก {snapshots.length - SHOW} รายการ (ดูได้ที่ออเดอร์แต่ละใบ)
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="section-head"><h2>ประวัติออเดอร์</h2></div>
         <div className="card">

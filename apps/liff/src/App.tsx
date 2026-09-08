@@ -307,6 +307,7 @@ export default function App() {
             profile={profile}
             origin={origin}
             onAddresses={(addresses) => setProfile({ ...profile, addresses })}
+            onProfile={setProfile}
             onOpenOrder={openOrder}
             onStartOrdering={() => { setTab('order'); setView('menu'); }}
           />
