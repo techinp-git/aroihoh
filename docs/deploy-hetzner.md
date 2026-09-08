@@ -120,6 +120,8 @@ sudo systemctl reload caddy
 
 ### ตั้งครั้งเดียว (ฝั่ง GitHub repo)
 
+> 📋 checklist ไล่ทีละขั้น (สร้าง SSH key/PAT + คำสั่งเทสต์): [`cd-secrets-checklist.md`](cd-secrets-checklist.md)
+
 **Settings → Secrets and variables → Actions**
 
 Secrets (ความลับ):
