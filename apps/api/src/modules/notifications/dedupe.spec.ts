@@ -1,4 +1,11 @@
-import { buildDedupeKey, parseDedupeKey, isRetryableStatus, backoffMs, isValidJob } from './dedupe';
+import {
+  buildDedupeKey,
+  parseDedupeKey,
+  isRetryableStatus,
+  backoffMs,
+  isValidJob,
+  NOTIFY_KINDS,
+} from './dedupe';
 
 const ORDER = '3f2a1b4c-5d6e-7f80-9a1b-2c3d4e5f6071';
 
@@ -84,6 +91,12 @@ describe('isValidJob', () => {
 
   it('รับ payload ที่ครบ', () => {
     expect(isValidJob(valid)).toBe(true);
+  });
+
+  // regression: เคยเพิ่ม points_earned เข้า type แล้วลืมแก้ isValidJob → worker ทิ้ง job แจ้งแต้มทั้งหมด
+  // (พังเฉพาะ prod เพราะ dev/CI ไม่มี Redis เลยวิ่งโหมด inline ที่ข้ามตัวตรวจนี้ไป)
+  it.each(NOTIFY_KINDS)('รับทุกชนิดที่ประกาศไว้: %s', (kind) => {
+    expect(isValidJob({ ...valid, kind })).toBe(true);
   });
 
   it('ปฏิเสธ job เก่า/พังที่ค้างในคิว', () => {
