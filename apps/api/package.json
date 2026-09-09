@@ -16,6 +16,8 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@expo-google-fonts/sarabun": "^0.4.1",
+    "@napi-rs/canvas": "^1.0.8",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LineClient } from './line.client';
 import { MediaService } from '../media/media.service';
+import { RichMenuService } from './rich-menu.service';
 import { inboundPlaceholder } from './inbound-preview';
 
 // รูปแบบ event จาก LINE webhook (เอาเฉพาะที่ใช้)
@@ -36,6 +37,7 @@ export class LineService {
     private readonly prisma: PrismaService,
     private readonly line: LineClient,
     private readonly media: MediaService,
+    private readonly richMenu: RichMenuService,
   ) {}
 
   // upsert ลูกค้าจาก lineUserId + ดึงชื่อ/รูปโปรไฟล์ถ้ายังไม่มี (แชตจะได้เห็นชื่อจริง)
@@ -202,6 +204,11 @@ export class LineService {
             type: 'welcome',
             customerId: cust.id,
           });
+          // ผูก Rich Menu ตามกลุ่ม (ถ้าผู้ติดตามเข้ากลุ่มไหน) — คนใหม่ปกติได้ default ที่ LINE ครอบให้เอง
+          // void catch: ห้ามให้การผูกเมนูพัง flow follow (pattern เดียวกับ notify)
+          void this.richMenu
+            .assignForFollower(brandId, cust.id)
+            .catch((e) => this.log.warn(`assignForFollower error: ${(e as Error).message}`));
         }
       } catch (e) {
         // ห้าม log PII — log แค่ประเภท error (PDPA #6)

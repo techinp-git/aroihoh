@@ -1010,6 +1010,46 @@ async function main() {
   // เคลียร์ค่าทดสอบ (กัน secret ปลอมค้าง → webhook รอบถัดไป fallback env ได้)
   await req('PUT', `/admin/line-config?brandId=${brandId}`, { token: adminToken, body: { channelId: '', channelSecret: '', channelAccessToken: '' } });
 
+  // 22) Rich Menu ตามกลุ่ม (audience) + default — dev ไม่มี LINE token → publish/sync = skipped
+  // เคลียร์เมนูเดิมก่อน (กันชนกรณีรันซ้ำบน DB ที่ seed ค้าง — กลุ่มก่อน default ทีหลัง)
+  const rmExisting = await req('GET', `/admin/rich-menus?brandId=${brandId}`, { token: adminToken });
+  for (const m of (rmExisting.body || []).filter((x) => !x.isDefault).concat((rmExisting.body || []).filter((x) => x.isDefault))) {
+    await req('DELETE', `/admin/rich-menus/${m.id}?brandId=${brandId}`, { token: adminToken });
+  }
+  const rmCreate = await req('POST', `/admin/rich-menus?brandId=${brandId}`, {
+    token: adminToken, body: { name: 'เมนูหลัก e2e', preset: 'default' },
+  });
+  ok(is2xx(rmCreate.status) && rmCreate.body?.isDefault === true, 'สร้าง default Rich Menu (preset)', JSON.stringify(rmCreate.body));
+  ok(rmCreate.body?.publish?.skipped === true, 'dev ไม่มี LINE token → publish skipped (เก็บ row ไว้ก่อน)');
+  const rmId = rmCreate.body?.id;
+  const rmList = await req('GET', `/admin/rich-menus?brandId=${brandId}`, { token: adminToken });
+  ok((rmList.body || []).some((m) => m.id === rmId && m.hasImage === true), 'list Rich Menu + รูป generate แล้ว (hasImage)');
+  const rmDup = await req('POST', `/admin/rich-menus?brandId=${brandId}`, { token: adminToken, body: { name: 'default2', preset: 'default' } });
+  ok(rmDup.status === 400, 'สร้าง default ซ้ำ → 400 (มีได้แบรนด์ละ 1)', `ได้ ${rmDup.status}`);
+  const rmSync = await req('POST', `/admin/rich-menus/sync?brandId=${brandId}`, { token: adminToken });
+  ok(rmSync.body?.skipped === true, 'sync (dev ไม่มี token) → skipped ไม่ error');
+  // audience → group menu → ห้ามลบ audience ที่ถูกใช้
+  const rmAud = await req('POST', `/admin/audiences?brandId=${brandId}`, {
+    token: adminToken, body: { name: 'กลุ่มเมนู e2e', rules: { match: 'all', criteria: [{ type: 'tags', tags: ['vip'] }] } },
+  });
+  const rmAudId = rmAud.body?.id;
+  const rmGroup = await req('POST', `/admin/rich-menus?brandId=${brandId}`, {
+    token: adminToken, body: { name: 'เมนูกลุ่ม e2e', preset: 'member', audienceId: rmAudId, priority: 10 },
+  });
+  ok(is2xx(rmGroup.status) && rmGroup.body?.audienceId === rmAudId, 'สร้างเมนูกลุ่มผูก audience');
+  const rmAudDel = await req('DELETE', `/admin/audiences/${rmAudId}?brandId=${brandId}`, { token: adminToken });
+  ok(rmAudDel.status === 400, 'ลบ audience ที่ถูกใช้ใน Rich Menu → 400 (กันเมนูกลุ่มกลายเป็น default)', `ได้ ${rmAudDel.status}`);
+  // RBAC: kitchen role เข้าไม่ได้ (owner only)
+  ok((await req('GET', `/admin/rich-menus?brandId=${brandId}`, { token: kTok })).status === 403, 'kitchen เข้า rich-menus → 403 (owner only)');
+  // tenant isolation: admin เข้าแบรนด์ที่ไม่มีสิทธิ์ → 403
+  ok((await req('GET', `/admin/rich-menus?brandId=${newBrandId}`, { token: adminToken })).status === 403, 'rich-menus ข้ามแบรนด์ → 403');
+  // customer JWT เข้า admin rich-menus → 401/403
+  ok([401, 403].includes((await req('GET', `/admin/rich-menus?brandId=${brandId}`, { token: custToken })).status), 'customer JWT เข้า rich-menus → 401/403');
+  // เคลียร์ที่สร้างไว้ (กลุ่มก่อน default ทีหลัง) + audience
+  await req('DELETE', `/admin/rich-menus/${rmGroup.body?.id}?brandId=${brandId}`, { token: adminToken });
+  await req('DELETE', `/admin/rich-menus/${rmId}?brandId=${brandId}`, { token: adminToken });
+  await req('DELETE', `/admin/audiences/${rmAudId}?brandId=${brandId}`, { token: adminToken });
+
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);
   if (fail > 0) {

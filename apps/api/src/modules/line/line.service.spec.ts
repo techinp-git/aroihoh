@@ -11,7 +11,8 @@ function make(replyRes: any, pushRes: any) {
     messageLog: { create: jest.fn(async ({ data }: any) => { created.push(data); return data; }) },
   };
   const media = { save: jest.fn(), resolveExisting: jest.fn(), stream: jest.fn() };
-  const svc = new LineService(prisma as any, line as any, media as any);
+  const richMenu = { assignForFollower: jest.fn().mockResolvedValue(undefined) };
+  const svc = new LineService(prisma as any, line as any, media as any, richMenu as any);
   return { svc, line, prisma, created };
 }
 

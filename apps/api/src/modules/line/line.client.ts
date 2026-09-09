@@ -186,6 +186,100 @@ export class LineClient {
     return { ok: res.ok };
   }
 
+  /**
+   * อัปโหลดรูป rich menu จาก Buffer ตรง ๆ (รูปที่ generate เอง — ไม่ต้อง host ก่อน)
+   * ใช้ api-data.line.me เหมือน uploadRichMenuImage · LINE รับ jpeg/png ≤ 1MB
+   */
+  async uploadRichMenuImageBuffer(
+    brandId: string,
+    richMenuId: string,
+    buf: Buffer,
+    mime = 'image/png',
+  ): Promise<{ ok: boolean; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, error: 'ยังไม่ได้ตั้ง Channel access token' };
+    if (buf.byteLength > 1024 * 1024) return { ok: false, error: 'รูปใหญ่เกิน 1MB' };
+    const res = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
+      method: 'POST',
+      headers: { 'Content-Type': mime, Authorization: `Bearer ${channelAccessToken}` },
+      body: new Uint8Array(buf),
+    });
+    if (!res.ok) return { ok: false, error: `อัปโหลดรูปไม่สำเร็จ ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    return { ok: true };
+  }
+
+  /** ผูก rich menu ให้ลูกค้า 1 คน (เมนูรายคน override default) */
+  async linkUserRichMenu(
+    brandId: string,
+    userId: string,
+    richMenuId: string,
+  ): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch(`https://api.line.me/v2/bot/user/${userId}/richmenu/${richMenuId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `link ไม่สำเร็จ ${res.status}` };
+  }
+
+  /** ปลด rich menu รายคน → กลับไปใช้ default */
+  async unlinkUserRichMenu(
+    brandId: string,
+    userId: string,
+  ): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true };
+    const res = await fetch(`https://api.line.me/v2/bot/user/${userId}/richmenu`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `unlink ไม่สำเร็จ ${res.status}` };
+  }
+
+  /** ผูก rich menu ให้หลายคนพร้อมกัน (chunk ละ ≤500 ตามลิมิต LINE) — คืนจำนวนที่ผูกสำเร็จ */
+  async bulkLinkRichMenu(
+    brandId: string,
+    richMenuId: string,
+    userIds: string[],
+  ): Promise<{ ok: boolean; skipped?: boolean; linked: number; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true, linked: 0 };
+    let linked = 0;
+    for (let i = 0; i < userIds.length; i += 500) {
+      const batch = userIds.slice(i, i + 500);
+      const res = await fetch('https://api.line.me/v2/bot/richmenu/bulk/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+        body: JSON.stringify({ richMenuId, userIds: batch }),
+      });
+      if (!res.ok) return { ok: false, linked, error: `bulk link ${res.status}` };
+      linked += batch.length;
+    }
+    return { ok: true, linked };
+  }
+
+  /** ปลด rich menu ให้หลายคนพร้อมกัน (chunk ละ ≤500) — กลับไป default */
+  async bulkUnlinkRichMenu(
+    brandId: string,
+    userIds: string[],
+  ): Promise<{ ok: boolean; skipped?: boolean; unlinked: number; error?: string }> {
+    const { channelAccessToken } = await this.config(brandId);
+    if (!channelAccessToken) return { ok: false, skipped: true, unlinked: 0 };
+    let unlinked = 0;
+    for (let i = 0; i < userIds.length; i += 500) {
+      const batch = userIds.slice(i, i + 500);
+      const res = await fetch('https://api.line.me/v2/bot/richmenu/bulk/unlink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channelAccessToken}` },
+        body: JSON.stringify({ userIds: batch }),
+      });
+      if (!res.ok) return { ok: false, unlinked, error: `bulk unlink ${res.status}` };
+      unlinked += batch.length;
+    }
+    return { ok: true, unlinked };
+  }
+
   /** ตอบกลับด้วย replyToken (จาก webhook) — ฟรีกว่า push ไม่กินโควตา */
   async replyText(brandId: string, replyToken: string, text: string): Promise<{ ok: boolean; skipped?: boolean }> {
     const { channelAccessToken } = await this.config(brandId);

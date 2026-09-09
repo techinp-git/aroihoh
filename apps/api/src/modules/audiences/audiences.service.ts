@@ -105,6 +105,10 @@ export class AudiencesService {
 
   async remove(brandId: string, id: string) {
     await this.get(brandId, id);
+    // กันลบกลุ่มที่ถูกใช้เป็นเงื่อนไขของ Rich Menu อยู่ (FK RESTRICT — เตือนก่อนชน DB error)
+    const usedByMenu = await this.prisma.richMenu.count({ where: { brandId, audienceId: id } });
+    if (usedByMenu > 0)
+      throw new BadRequestException('กลุ่มนี้ถูกใช้ใน Rich Menu อยู่ — ลบ/แก้เมนูที่ผูกกลุ่มนี้ก่อน');
     await this.prisma.audience.delete({ where: { id } });
     return { deleted: true };
   }

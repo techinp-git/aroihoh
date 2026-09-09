@@ -92,6 +92,7 @@ model Brand {
   broadcasts    Broadcast[]
   contents      ContentLibrary[]
   audiences     Audience[]
+  richMenus     RichMenu[]
 
   @@unique([merchantId, slug])
   @@index([merchantId])
@@ -184,6 +185,8 @@ model Customer {
   policyAcceptedAt       DateTime?
   /// US-50: cache ของ SUM(loyalty_transactions.points) — อัปเดตใน transaction เดียวกับ ledger เสมอ ห้ามติดลบ
   pointsBalance     Int     @default(0)
+  /// Rich Menu ตามกลุ่ม: lineRichMenuId ที่ผูกให้ล่าสุด (null = อยู่ default) — ให้ sync diff ได้
+  assignedRichMenuId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -496,9 +499,40 @@ model Audience {
 
   brand      Brand       @relation(fields: [brandId], references: [id])
   broadcasts Broadcast[]
+  richMenus  RichMenu[]
 
   @@index([brandId, createdAt])
   @@map("audiences")
+}
+
+// Rich Menu ตามกลุ่ม (audience) — audienceId=null คือ default menu ของแบรนด์ (มีได้ 1 อัน บังคับในโค้ด)
+model RichMenu {
+  id             String   @id @default(uuid())
+  brandId        String
+  name           String
+  /// null = default menu (คนใหม่/ไม่เข้ากลุ่มไหน) · มีค่า = ผูกกับกลุ่ม audience นี้
+  audienceId     String?
+  /// เลขน้อย = สำคัญกว่า (เช็คก่อนเวลาลูกค้าเข้าหลายกลุ่ม)
+  priority       Int      @default(100)
+  /// layout ปุ่ม (RichMenuZone[]) — ดู line/richmenu.ts
+  zones          Json
+  chatBarText    String   @default("เมนู")
+  /// รูปที่ generate แล้ว (basename ใน media store) — ไว้ preview/re-upload
+  imagePath      String?
+  /// id ที่ LINE ออกให้ (null = ยังไม่ publish เช่น dev ไม่มี token)
+  lineRichMenuId String?
+  enabled        Boolean  @default(true)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  brand    Brand     @relation(fields: [brandId], references: [id])
+  // Restrict: ลบ audience ที่มี rich menu ผูกอยู่ไม่ได้ (กัน SET NULL ที่ทำให้เมนูกลุ่มกลายเป็น default เงียบ ๆ)
+  audience Audience? @relation(fields: [audienceId], references: [id], onDelete: Restrict)
+
+  @@index([brandId])
+  @@index([brandId, audienceId])
+  @@map("rich_menus")
 }
 
 // ─────────────────────────── Admin / audit ───────────────────────────
