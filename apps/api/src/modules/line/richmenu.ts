@@ -152,6 +152,86 @@ export function validateRichMenu(menu: RichMenuObject): { ok: boolean; errors: s
   return { ok: errors.length === 0, errors };
 }
 
+// ─────────────────────── เมนูตามกลุ่ม (EP: rich-menu-groups) ───────────────────────
+// zones = layout ปุ่มแบบ abstract (ยังไม่รู้ liffId) → resolve ตอน build
+// ให้เมนูแต่ละกลุ่มกำหนดปุ่มต่างกันได้ โดยยังใช้ gridBounds/validate เดิม
+
+/** action ของโซนแบบ abstract — 'liff' resolve เป็น deep link ตอน build, 'message' ส่ง text ให้ auto-reply */
+export type ZoneAction =
+  | { type: 'liff'; view?: LiffDeepLinkView } // view undefined = หน้าเมนูหลัก
+  | { type: 'message'; text: string };
+
+export interface RichMenuZone {
+  label: string;
+  action: ZoneAction;
+}
+
+/** แปลงโซน → action ของ LINE (liff ที่ไม่มี liffId → ตกไปปุ่มส่งข้อความ ให้ auto-reply ตอบ กันปุ่มตาย) */
+function zoneToArea(z: RichMenuZone, liffId?: string | null): RichMenuArea['action'] {
+  if (z.action.type === 'message') return { type: 'message', label: z.label, text: z.action.text };
+  if (!liffId) return { type: 'message', label: z.label, text: 'เมนู' };
+  return { type: 'uri', label: z.label, uri: liffUri(liffId, z.action.view) };
+}
+
+export interface BuildFromZonesOpts {
+  liffId?: string | null;
+  brandName?: string;
+  chatBarText?: string;
+}
+
+/** สร้าง RichMenuObject จาก zones (สูงสุด 6 ช่อง 3×2) — หัวใจของเมนูตามกลุ่ม */
+export function buildRichMenuFromZones(zones: RichMenuZone[], opts: BuildFromZonesOpts = {}): RichMenuObject {
+  const use = zones.slice(0, 6);
+  const areas: RichMenuArea[] = use.map((z, i) => ({
+    bounds: gridBounds(Math.floor(i / 3), i % 3),
+    action: zoneToArea(z, opts.liffId),
+  }));
+  return {
+    size: { width: RICH_MENU_WIDTH, height: RICH_MENU_HEIGHT_TALL },
+    selected: true,
+    name: `${opts.brandName ?? 'ร้าน'} — เมนู`.slice(0, 300),
+    chatBarText: (opts.chatBarText?.trim() || 'เมนู').slice(0, 14),
+    areas,
+  };
+}
+
+/** preset โซนสำเร็จรูป — ใช้ deep link ที่ LIFF รองรับจริง (menu / points / profile) */
+export const RICH_MENU_ZONE_PRESETS: Record<string, { name: string; zones: RichMenuZone[] }> = {
+  default: {
+    name: 'มาตรฐาน',
+    zones: [
+      { label: 'สั่งอาหาร', action: { type: 'liff' } },
+      { label: 'แต้มสะสม', action: { type: 'liff', view: 'points' } },
+      { label: 'โปรไฟล์/ที่อยู่', action: { type: 'liff', view: 'profile' } },
+      { label: 'ออเดอร์ของฉัน', action: { type: 'liff', view: 'profile' } },
+      { label: 'โปรโมชัน', action: { type: 'message', text: 'โปรโมชัน' } },
+      { label: 'ติดต่อร้าน', action: { type: 'message', text: 'ติดต่อแอดมิน' } },
+    ],
+  },
+  new_customer: {
+    name: 'ลูกค้าใหม่',
+    zones: [
+      { label: 'สั่งเลย', action: { type: 'liff' } },
+      { label: 'เมนูแนะนำ', action: { type: 'message', text: 'เมนูแนะนำ' } },
+      { label: 'สมัคร/สะสมแต้ม', action: { type: 'liff', view: 'points' } },
+      { label: 'โปรโมชัน', action: { type: 'message', text: 'โปรโมชัน' } },
+      { label: 'ที่อยู่จัดส่ง', action: { type: 'liff', view: 'profile' } },
+      { label: 'ติดต่อร้าน', action: { type: 'message', text: 'ติดต่อแอดมิน' } },
+    ],
+  },
+  member: {
+    name: 'สมาชิก/ลูกค้าประจำ',
+    zones: [
+      { label: 'สั่งอาหาร', action: { type: 'liff' } },
+      { label: 'แต้มของฉัน', action: { type: 'liff', view: 'points' } },
+      { label: 'แลกรางวัล', action: { type: 'liff', view: 'points' } },
+      { label: 'ออเดอร์ของฉัน', action: { type: 'liff', view: 'profile' } },
+      { label: 'โปรสมาชิก', action: { type: 'message', text: 'โปรสมาชิก' } },
+      { label: 'ติดต่อร้าน', action: { type: 'message', text: 'ติดต่อแอดมิน' } },
+    ],
+  },
+};
+
 /** พื้นที่ทับกันไหม (LINE ไม่ error แต่ปุ่มจะกินกัน กดผิดปุ่ม) */
 export function findOverlaps(menu: RichMenuObject): Array<[number, number]> {
   const hits: Array<[number, number]> = [];

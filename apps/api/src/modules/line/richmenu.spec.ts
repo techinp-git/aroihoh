@@ -1,8 +1,10 @@
 import {
   buildRichMenu,
+  buildRichMenuFromZones,
   validateRichMenu,
   findOverlaps,
   gridBounds,
+  RICH_MENU_ZONE_PRESETS,
   RICH_MENU_WIDTH,
   RICH_MENU_HEIGHT_TALL,
 } from './richmenu';
@@ -141,6 +143,47 @@ describe('validateRichMenu', () => {
 
   it('จับ areas ว่าง', () => {
     expect(validateRichMenu({ ...base, areas: [] }).ok).toBe(false);
+  });
+});
+
+describe('buildRichMenuFromZones — เมนูตามกลุ่ม', () => {
+  it('แปลง zones → areas ตามลำดับกริด 3×2', () => {
+    const menu = buildRichMenuFromZones(RICH_MENU_ZONE_PRESETS.member.zones, { liffId: 'abc', brandName: 'ชิมชีวา' });
+    expect(menu.areas).toHaveLength(6);
+    expect(menu.areas[0].bounds).toEqual(gridBounds(0, 0));
+    expect(menu.areas[5].bounds).toEqual(gridBounds(1, 2));
+    expect(validateRichMenu(menu).ok).toBe(true);
+    expect(findOverlaps(menu)).toEqual([]);
+  });
+
+  it('liff action → deep link ?view= ที่ app รองรับ', () => {
+    const menu = buildRichMenuFromZones(
+      [
+        { label: 'แต้ม', action: { type: 'liff', view: 'points' } },
+        { label: 'โปรไฟล์', action: { type: 'liff', view: 'profile' } },
+        { label: 'สั่ง', action: { type: 'liff' } },
+      ],
+      { liffId: 'abc-123' },
+    );
+    const uris = menu.areas.map((a) => a.action.uri);
+    expect(uris).toContain('https://liff.line.me/abc-123?view=points');
+    expect(uris).toContain('https://liff.line.me/abc-123?view=profile');
+    expect(uris).toContain('https://liff.line.me/abc-123');
+  });
+
+  it('ไม่มี liffId → liff button ตกไปเป็นปุ่มส่งข้อความ (กันปุ่มตาย)', () => {
+    const menu = buildRichMenuFromZones([{ label: 'สั่งอาหาร', action: { type: 'liff' } }], { liffId: null });
+    expect(menu.areas[0].action.type).toBe('message');
+    expect(menu.areas[0].action.text).toBe('เมนู');
+    expect(validateRichMenu(menu).ok).toBe(true);
+  });
+
+  it('presets ทุกตัว build + validate ผ่าน', () => {
+    for (const key of Object.keys(RICH_MENU_ZONE_PRESETS)) {
+      const menu = buildRichMenuFromZones(RICH_MENU_ZONE_PRESETS[key].zones, { liffId: 'x', brandName: 'ร้าน' });
+      expect(validateRichMenu(menu).ok).toBe(true);
+      expect(menu.areas.length).toBeLessThanOrEqual(6);
+    }
   });
 });
 
