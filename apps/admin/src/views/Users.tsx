@@ -3,6 +3,7 @@ import {
   listAdminUsers,
   createAdminUser,
   updateAdminUser,
+  unlinkAdminLine,
   ROLE_TH,
   type AdminUser,
   type Brand,
@@ -64,6 +65,19 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
     setBusy(u.id);
     try {
       await updateAdminUser(u.id, body);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const unlinkLine = async (u: AdminUser) => {
+    if (!confirm(`เลิกผูกบัญชี LINE ของ ${u.name}? ครั้งหน้าต้องล็อกอินอีเมล/รหัสผ่านใน LIFF ใหม่`)) return;
+    setBusy(u.id);
+    try {
+      await unlinkAdminLine(u.id);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -144,6 +158,7 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
                 <th>ผู้ใช้</th>
                 <th>บทบาท</th>
                 <th>แบรนด์</th>
+                <th>LINE พนักงาน</th>
                 <th>สถานะ</th>
               </tr>
             </thead>
@@ -168,6 +183,24 @@ export default function Users({ brands, selfId }: { brands: Brand[]; selfId: str
                       </select>
                     </td>
                     <td>{u.role === 'staff' ? `${u.brandIds.length} แบรนด์` : 'ทุกแบรนด์'}</td>
+                    {/* US-61: ผูก LINE ไว้ = เปิด LIFF แล้วเข้าโหมดพนักงานได้เลย
+                        ปิดบัญชีก็กันได้อยู่แล้ว แต่ตัวนี้ตัดเฉพาะทางเข้าทาง LINE (เช่นมือถือหาย) */}
+                    <td>
+                      {u.lineLinkedBrandIds?.length ? (
+                        <div className="row-actions">
+                          <span className="pill on">ผูกแล้ว {u.lineLinkedBrandIds.length}</span>
+                          <button
+                            className="btn ghost"
+                            disabled={busy === u.id}
+                            onClick={() => unlinkLine(u)}
+                          >
+                            เลิกผูก
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="pay">—</span>
+                      )}
+                    </td>
                     <td>
                       <label className="switch">
                         <input

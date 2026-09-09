@@ -37,13 +37,22 @@ import {
   type Reward,
   type CreateOrderBody,
 } from './api';
+import {
+  staffLineLogin,
+  setStaffToken,
+  type StaffSession,
+} from './staff';
 import AddressPicker from './AddressPicker';
 import ProfileTab, { addressIcon } from './ProfileTab';
 import PointsTab, { EarnResultView, type EarnOutcome } from './PointsTab';
 import Coupon from './Coupon';
+import StaffTab from './StaffTab';
 
-/** แท็บล่าง (US-59) — "แต้ม" โผล่เมื่อ EP-14 ลงแล้ว (profile.loyalty ไม่ใช่ null) */
-type Tab = 'order' | 'points' | 'profile';
+/**
+ * แท็บล่าง (US-59) — "แต้ม" โผล่เมื่อ EP-14 ลงแล้ว (profile.loyalty ไม่ใช่ null)
+ * "พนักงาน" (US-61) โผล่เฉพาะบัญชี LINE ที่ผูกกับบัญชีหลังร้านไว้แล้ว — ลูกค้าไม่เห็น
+ */
+type Tab = 'order' | 'points' | 'profile' | 'staff';
 /** หน้าย่อยในแท็บสั่งอาหาร */
 type View = 'menu' | 'cart' | 'checkout' | 'done' | 'track';
 
@@ -114,6 +123,10 @@ export default function App() {
   const [points, setPoints] = useState<LoyaltyMe | null>(null);
   const [earnOutcome, setEarnOutcome] = useState<EarnOutcome | null>(null);
   const [coupon, setCoupon] = useState<PendingRedemption | null>(null); // US-53 คูปองที่เปิดอยู่
+  // US-61 โหมดพนักงาน: session = ผูก LINE ไว้แล้ว · staffOpen = เปิดหน้าล็อกอินจาก ?view=staff
+  const [staff, setStaff] = useState<StaffSession | null>(null);
+  const [staffOpen, setStaffOpen] = useState(DEEP_LINK_VIEW === 'staff');
+  const [idToken, setIdToken] = useState<string | undefined>();
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [note, setNote] = useState('');
 
@@ -142,8 +155,18 @@ export default function App() {
         if (LIFF_ID) {
           await liff.init({ liffId: LIFF_ID });
           if (!liff.isLoggedIn()) return liff.login();
-          const r = await lineLogin(liff.getIDToken() || '');
+          const lineIdToken = liff.getIDToken() || '';
+          setIdToken(lineIdToken);
+          const r = await lineLogin(lineIdToken);
           setToken(r.accessToken);
+          // US-61: ถามเงียบ ๆ ว่า LINE นี้ผูกกับบัญชีพนักงานไว้ไหม
+          // ลูกค้าทั่วไปได้ 404 แล้วเงียบไป — ห้ามให้ผลตรงนี้ถ่วง/ทำให้หน้าสั่งอาหารพัง
+          void staffLineLogin(lineIdToken)
+            .then((sess) => {
+              setStaffToken(sess.token);
+              setStaff(sess);
+            })
+            .catch(() => {});
         } else {
           const r = await devLogin(); // dev: ไม่ต้องมี LINE
           setToken(r.accessToken);
@@ -191,6 +214,8 @@ export default function App() {
         // US-59 deep link จาก Rich Menu: ?view=profile | ?view=points
         if (DEEP_LINK_VIEW === 'profile' && p) setTab('profile');
         else if (DEEP_LINK_VIEW === 'points' && p) setTab(p.loyalty ? 'points' : 'profile');
+        // US-61: ลิงก์ที่เจ้าของร้านส่งให้พนักงานผูกบัญชีครั้งแรก (?view=staff)
+        else if (DEEP_LINK_VIEW === 'staff') setTab('staff');
       } catch (e) {
         setFatal((e as Error).message);
       } finally {
@@ -383,6 +408,7 @@ export default function App() {
     earnOutcome ? 'สะสมแต้ม'
     : tab === 'profile' ? 'โปรไฟล์ของฉัน'
     : tab === 'points' ? 'แต้มสะสม'
+    : tab === 'staff' ? 'โหมดพนักงาน'
     : view === 'menu' ? 'เลือกเมนู'
     : undefined;
 
@@ -471,6 +497,16 @@ export default function App() {
                 }}
               />
             : <div className="center"><div className="spinner" /></div>
+        )}
+
+        {/* ── แท็บพนักงาน (US-61) — สแกนคูปองแลกแต้มหน้าร้าน ── */}
+        {!earnOutcome && tab === 'staff' && (
+          <StaffTab
+            session={staff}
+            idToken={idToken}
+            onSession={setStaff}
+            onExit={() => { setStaffOpen(false); goTab('order'); }}
+          />
         )}
 
         {/* MENU */}
@@ -740,6 +776,13 @@ export default function App() {
             <button className={'navbtn' + (tab === 'profile' ? ' on' : '')} onClick={() => goTab('profile')}>
               <span className="ico">👤</span>โปรไฟล์
             </button>
+            {/* US-61: ลูกค้าทั่วไปไม่เห็นปุ่มนี้เลย — โผล่เมื่อ LINE นี้ผูกกับบัญชีหลังร้านไว้แล้ว
+                หรือเปิดมาด้วยลิงก์ ?view=staff เพื่อผูกครั้งแรก */}
+            {(staff || staffOpen) && (
+              <button className={'navbtn' + (tab === 'staff' ? ' on' : '')} onClick={() => goTab('staff')}>
+                <span className="ico">🧾</span>พนักงาน
+              </button>
+            )}
           </nav>
         )}
       </div>

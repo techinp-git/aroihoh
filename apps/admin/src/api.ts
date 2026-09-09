@@ -119,6 +119,8 @@ export interface MenuCategory {
 }
 export interface AdminUser {
   id: string; email: string; name: string; role: string; isActive: boolean; brandIds: string[];
+  /** US-61: แบรนด์ที่ผูกบัญชี LINE ไว้แล้ว (เข้าโหมดพนักงานใน LIFF ได้) */
+  lineLinkedBrandIds: string[];
 }
 
 // ── Endpoints ──
@@ -498,6 +500,10 @@ export const updateAdminUser = (
   id: string,
   body: { role?: string; isActive?: boolean; name?: string; brandIds?: string[] },
 ) => adminFetch<AdminUser>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+/** US-61: ตัดทางเข้าโหมดพนักงานใน LIFF ของคนนี้ (ลาออก/มือถือหาย) */
+export const unlinkAdminLine = (id: string) =>
+  adminFetch<{ unlinked: number }>(`/admin/users/${id}/line-link`, { method: 'DELETE' });
 
 // ── Shared UI helpers ──
 export const baht = (satang: number) =>
