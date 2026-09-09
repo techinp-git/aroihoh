@@ -18,8 +18,9 @@ import Broadcast from './views/Broadcast';
 import Users from './views/Users';
 import Settings from './views/Settings';
 import Loyalty from './views/Loyalty';
+import RichMenu from './views/RichMenu';
 
-type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'loyalty' | 'users' | 'settings';
+type View = 'dashboard' | 'orders' | 'kitchen' | 'menu' | 'chat' | 'broadcast' | 'customers' | 'loyalty' | 'richmenu' | 'users' | 'settings';
 
 // US-45: แต่ละเมนูโชว์เฉพาะ role ที่ระบุ (kitchen เห็นแค่ KDS, chat_agent เห็นแค่แชต)
 type Role = 'owner' | 'manager' | 'staff' | 'kitchen' | 'chat_agent';
@@ -33,6 +34,7 @@ const NAV: { key: View; label: string; ic: string; roles: Role[] }[] = [
   { key: 'customers', label: 'ลูกค้า', ic: '👤', roles: ['owner', 'manager', 'staff'] },
   // US-54: คนขาย (staff) ต้องกดยืนยันแลกแต้มเองได้ ไม่ต้องตาม manager
   { key: 'loyalty', label: 'สะสมแต้ม', ic: '🎯', roles: ['owner', 'manager', 'staff'] },
+  { key: 'richmenu', label: 'Rich Menu', ic: '📱', roles: ['owner'] },
   { key: 'users', label: 'ผู้ใช้ & สิทธิ์', ic: '👥', roles: ['owner'] },
   { key: 'settings', label: 'ตั้งค่า', ic: '⚙️', roles: ['owner', 'manager'] },
 ];
@@ -46,6 +48,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   broadcast: { title: 'ส่งข่าวสาร', sub: 'LINE Broadcast — เลือกกลุ่ม + เคารพ opt-out (US-18)' },
   customers: { title: 'ลูกค้า', sub: 'รายชื่อ + ประวัติออเดอร์ + ยอดใช้จ่าย' },
   loyalty: { title: 'สะสมแต้ม', sub: 'สแกนคูปองแลกแต้ม + จัดการของรางวัล (US-53/54)' },
+  richmenu: { title: 'Rich Menu', sub: 'เมนู LINE ตามกลุ่มลูกค้า + default · รูป generate อัตโนมัติ' },
   users: { title: 'ผู้ใช้ & สิทธิ์', sub: 'จัดการทีมงาน + บทบาท (US-30)' },
   settings: { title: 'ตั้งค่า', sub: 'บัญชีและการเชื่อมต่อ' },
 };
@@ -231,6 +234,7 @@ export default function App() {
           {view === 'loyalty' && (
             <Loyalty brandId={brandId} canManage={profile.role === 'owner' || profile.role === 'manager'} />
           )}
+          {view === 'richmenu' && <RichMenu brandId={brandId} />}
           {view === 'users' && <Users brands={brands} selfId={profile.id} />}
           {view === 'settings' && (
             <Settings
