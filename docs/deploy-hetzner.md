@@ -92,6 +92,8 @@ npm run build -w apps/admin
 sudo mkdir -p /var/www/aroihoh-liff /var/www/aroihoh-admin
 sudo cp -r apps/liff/dist/*  /var/www/aroihoh-liff/
 sudo cp -r apps/admin/dist/* /var/www/aroihoh-admin/
+# ⚠ วิธี manual นี้ทับอย่างเดียว ไม่ลบของเก่า — ไฟล์ใน assets/ ชื่อมี hash จึงค้างสะสมทุกรอบ
+#   (ใช้ scripts/deploy.sh แทนจะเก็บกวาดให้เอง)
 ```
 > LIFF ต้องรู้ `brandId` — ตั้งใน LIFF Endpoint URL เป็น `https://aroihoh-order.jivecode.click/?brandId=<id>` (ดูขั้น 7) ไม่ต้อง build ใหม่ต่อแบรนด์
 
@@ -154,7 +156,7 @@ Variables (ไม่ลับ — ฝังตอน build static, ต้อง�
 - **รันบน VPS ตรง ๆ** (ไม่พึ่ง GitHub): `cd /opt/aroihoh && bash scripts/deploy.sh <sha|latest>`
 - **rollback**: `bash scripts/deploy.sh <sha เก่า>` (image เก่ายังอยู่บน GHCR ตาม tag sha)
 
-> `deploy.sh` = pull api+static image ตาม tag → `docker cp` static ไป `/var/www` → `up -d` (ไม่ build) → `prisma migrate deploy` → health check `/api/health` → prune
+> `deploy.sh` = pull api+static image ตาม tag → `docker cp` static ไป `/var/www` (`sync_webroot`: วาง assets ใหม่ → สลับ `index.html` แบบ atomic → **ลบ asset ของ build เก่าที่ไม่ถูกใช้แล้ว**) → `up -d` (ไม่ build) → `prisma migrate deploy` → health check `/api/health` → prune
 > seed **ไม่อยู่ใน** deploy.sh (กันรันซ้ำทับข้อมูลจริง) — รันมือครั้งแรกครั้งเดียวตามข้อ 4
 
 ---
@@ -172,6 +174,8 @@ export VITE_LIFF_ID=<LIFF ID ของแบรนด์>                       
 npm ci && npm run build -w packages/shared && npm run build -w apps/liff -w apps/admin
 sudo cp -r apps/liff/dist/*  /var/www/aroihoh-liff/
 sudo cp -r apps/admin/dist/* /var/www/aroihoh-admin/
+# ⚠ วิธี manual นี้ทับอย่างเดียว ไม่ลบของเก่า — ไฟล์ใน assets/ ชื่อมี hash จึงค้างสะสมทุกรอบ
+#   (ใช้ scripts/deploy.sh แทนจะเก็บกวาดให้เอง)
 
 # ตรวจว่า env ฝังเข้า bundle จริง (ไม่ใช่แค่ export แล้วคิดว่าติด)
 grep -c "$VITE_LIFF_ID" /var/www/aroihoh-liff/assets/*.js     # ต้อง > 0
