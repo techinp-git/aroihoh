@@ -87,6 +87,7 @@ model Brand {
   payments      Payment[]
   messageLogs   MessageLog[]
   adminBrands   AdminBrand[]
+  adminLineLinks AdminLineLink[]
   auditLogs     AuditLog[]
   chatMessages  ChatMessage[]
   broadcasts    Broadcast[]
@@ -555,8 +556,9 @@ model AdminUser {
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
 
-  merchant    Merchant     @relation(fields: [merchantId], references: [id])
+  merchant    Merchant        @relation(fields: [merchantId], references: [id])
   adminBrands AdminBrand[]
+  lineLinks   AdminLineLink[]
 
   @@index([merchantId])
   @@map("admin_users")
@@ -573,6 +575,26 @@ model AdminBrand {
   @@id([adminUserId, brandId])
   @@index([brandId])
   @@map("admin_brands")
+}
+
+/// US-61: ผูกบัญชี LINE ของพนักงานกับบัญชีแอดมิน — เปิด LIFF แล้วเข้าโหมดพนักงานได้เลยโดยไม่ต้องพิมพ์รหัสผ่านซ้ำ
+/// ผูกครั้งแรกต้องล็อกอินอีเมล/รหัสผ่านใน LIFF ก่อน (พิสูจน์ตัวตน) แล้ว server ถึงจดคู่ไว้
+/// คีย์เป็น (lineUserId, brandId) เพราะ LINE userId ออกต่อ Login channel — คนละแบรนด์คนละเลข
+/// และถ้าสองแบรนด์ใช้ Login channel เดียวกัน คนเดียวก็ยังผูกได้ทั้งสองแบรนด์
+model AdminLineLink {
+  lineUserId  String
+  brandId     String
+  adminUserId String
+  linkedAt    DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  brand     Brand     @relation(fields: [brandId], references: [id])
+
+  @@id([lineUserId, brandId])
+  @@index([adminUserId])
+  @@index([brandId])
+  @@map("admin_line_links")
 }
 
 // US-12: ยกเลิก/เปลี่ยนสถานะต้องมี audit log

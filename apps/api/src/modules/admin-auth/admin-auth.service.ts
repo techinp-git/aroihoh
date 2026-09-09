@@ -1,9 +1,17 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AdminRole } from '../../common/guards/admin-jwt.guard';
+import { verifyLineIdToken } from '../auth/line-verify';
+import { resolveLoginChannelId } from '../auth/login-channel';
+import { canScanRedemptions } from './staff-mode';
 
 @Injectable()
 export class AdminAuthService {
@@ -38,6 +46,103 @@ export class AdminAuthService {
       throw new UnauthorizedException('บัญชีไม่ถูกต้องหรือถูกปิดใช้งาน');
     }
     return this.buildAuth(user);
+  }
+
+  /**
+   * US-61: เข้า "โหมดพนักงาน" ใน LIFF ด้วยบัญชี LINE ที่ผูกไว้แล้ว
+   *
+   * LIFF ยิงตัวนี้เงียบ ๆ ตอนเปิดแอปทุกครั้ง — ลูกค้าทั่วไปจะได้ 404 แล้วไม่เห็นอะไรเลย
+   * ส่วนพนักงานที่เคยผูกไว้จะได้ admin token กลับไปโดยไม่ต้องพิมพ์รหัสผ่านซ้ำ
+   */
+  async loginWithLine(idToken: string, brandId: string) {
+    const lineUserId = await this.verifyBrandIdToken(idToken, brandId);
+    const key = { lineUserId_brandId: { lineUserId, brandId } };
+    const link = await this.prisma.adminLineLink.findUnique({ where: key });
+    // ยังไม่เคยผูก = คนทั่วไปที่บังเอิญเปิดลิงก์นี้ ตอบเหมือนไม่มีอะไรอยู่ตรงนี้
+    if (!link) {
+      throw new NotFoundException({
+        code: 'NOT_LINKED',
+        message: 'บัญชี LINE นี้ยังไม่ได้ผูกกับพนักงานคนไหน',
+      });
+    }
+
+    // ปิดบัญชีพนักงานแล้ว = throw ที่นี่ (ผูก LINE ค้างไว้ก็เข้าไม่ได้)
+    const auth = await this.issueTokenFor(link.adminUserId);
+    // ย้ายออกจากแบรนด์นี้แล้ว = หมดสิทธิ์โหมดพนักงานของร้านนี้ทันที ไม่ต้องรอเลิกผูก
+    if (!auth.admin.brandIds.includes(brandId)) {
+      throw new ForbiddenException('บัญชีนี้ไม่มีสิทธิ์ในร้านนี้แล้ว');
+    }
+
+    await this.prisma.adminLineLink.update({ where: key, data: { lastUsedAt: new Date() } });
+    return this.withStaffScope(auth, brandId);
+  }
+
+  /**
+   * ผูกบัญชี LINE ที่กำลังใช้ เข้ากับแอดมินที่เพิ่งล็อกอินด้วยอีเมล/รหัสผ่าน
+   * ต้องมีทั้ง admin JWT (รู้รหัสผ่าน) และ ID token ที่ผ่าน verify (ถือ LINE เครื่องนั้นจริง)
+   *
+   * ไม่มี idToken (dev / เปิดหน้าเว็บนอก LINE) = ไม่ผูก แต่ยังคืนสิทธิ์โหมดพนักงานให้ใช้รอบนี้
+   */
+  async linkLine(adminId: string, idToken: string | undefined, brandId: string) {
+    const auth = await this.issueTokenFor(adminId);
+    if (!auth.admin.brandIds.includes(brandId)) {
+      throw new ForbiddenException('บัญชีนี้ไม่มีสิทธิ์ในร้านนี้');
+    }
+    let linked = false;
+    if (idToken) {
+      const lineUserId = await this.verifyBrandIdToken(idToken, brandId);
+      // ผูกซ้ำจากคนละบัญชี = ย้ายไปบัญชีใหม่ (พิสูจน์รหัสผ่านมาแล้ว) ไม่ใช่ error
+      await this.prisma.adminLineLink.upsert({
+        where: { lineUserId_brandId: { lineUserId, brandId } },
+        create: { lineUserId, brandId, adminUserId: adminId, lastUsedAt: new Date() },
+        update: { adminUserId: adminId, linkedAt: new Date(), lastUsedAt: new Date() },
+      });
+      linked = true;
+    }
+    return { ...this.withStaffScope(auth, brandId), linked };
+  }
+
+  /** เลิกผูก — ไม่ส่ง brandId = เลิกทุกแบรนด์ (เช่นทำมือถือหาย) */
+  async unlinkLine(adminId: string, brandId?: string) {
+    const r = await this.prisma.adminLineLink.deleteMany({
+      where: { adminUserId: adminId, ...(brandId ? { brandId } : {}) },
+    });
+    return { unlinked: r.count };
+  }
+
+  /** verify ID token กับ Login channel ของแบรนด์นั้น → คืน LINE userId ที่เชื่อถือได้ */
+  private async verifyBrandIdToken(idToken: string, brandId: string): Promise<string> {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
+    if (!brand || !brand.isActive) throw new NotFoundException('brand not found or inactive');
+    // Login channel ≠ Messaging channel (คนละเลข) — ใช้ตัวเดียวกับฝั่งลูกค้า
+    const loginChannelId = resolveLoginChannelId(brand);
+    if (!loginChannelId) {
+      throw new UnauthorizedException('brand has no LINE channel configured');
+    }
+    try {
+      const payload = await verifyLineIdToken(idToken, loginChannelId);
+      return payload.sub;
+    } catch (e) {
+      throw new UnauthorizedException(
+        e instanceof Error ? e.message : 'invalid LINE id token',
+      );
+    }
+  }
+
+  /** ต่อท้ายผลล็อกอินด้วยคำตอบว่า "แบรนด์นี้เปิดหน้าสแกนให้ไหม" — LIFF ไม่ต้องคิดกฎเอง */
+  private withStaffScope(
+    auth: { token: string; admin: { role: string; brandIds: string[] } },
+    brandId: string,
+  ) {
+    return {
+      ...auth,
+      brandId,
+      canScanRedemptions: canScanRedemptions(
+        auth.admin.role as AdminRole,
+        auth.admin.brandIds,
+        brandId,
+      ),
+    };
   }
 
   private async buildAuth(

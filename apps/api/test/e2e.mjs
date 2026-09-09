@@ -1050,6 +1050,44 @@ async function main() {
   await req('DELETE', `/admin/rich-menus/${rmId}?brandId=${brandId}`, { token: adminToken });
   await req('DELETE', `/admin/audiences/${rmAudId}?brandId=${brandId}`, { token: adminToken });
 
+  // ── US-61: โหมดพนักงานใน LIFF (ผูกบัญชี LINE กับบัญชีแอดมิน) ──
+  // ไม่ยิง LINE จริงในเทสต์ → เช็คเฉพาะเส้นที่ไม่ต้องใช้ ID token (validate/สิทธิ์/ผูก-เลิกผูก)
+  console.log('\n▸ US-61 โหมดพนักงานใน LIFF');
+  ok(
+    (await req('POST', '/admin/auth/line', { body: { brandId } })).status === 400,
+    'POST /admin/auth/line ไม่ส่ง idToken → 400',
+  );
+  ok(
+    (await req('POST', '/admin/auth/line/link', { body: { brandId } })).status === 401,
+    'ผูก LINE โดยไม่มี admin token → 401',
+  );
+  ok(
+    (await req('POST', '/admin/auth/line/link', { token: custToken, body: { brandId } })).status === 401,
+    'customer JWT ผูก LINE ไม่ได้ → 401 (คนละ secret)',
+  );
+  const staffScope = await req('POST', '/admin/auth/line/link', { token: adminToken, body: { brandId } });
+  ok(
+    is2xx(staffScope.status) && staffScope.body?.canScanRedemptions === true && staffScope.body?.linked === false,
+    'owner ขอสิทธิ์โหมดพนักงาน → สแกนได้ (ไม่ส่ง idToken = ยังไม่ผูก)',
+    JSON.stringify(staffScope.body),
+  );
+  const kScope = await req('POST', '/admin/auth/line/link', { token: kTok, body: { brandId } });
+  ok(
+    is2xx(kScope.status) && kScope.body?.canScanRedemptions === false,
+    'kitchen เข้าโหมดพนักงานได้แต่สแกนแลกแต้มไม่ได้ (ตรงกับ @Roles ของ endpoint จริง)',
+    JSON.stringify(kScope.body),
+  );
+  ok(
+    (await req('POST', `/admin/loyalty/redemptions/xxxx/confirm`, { token: kTok })).status === 403,
+    'kitchen ยิงยืนยันคูปองตรง ๆ → 403 (ตัวกันจริงอยู่ที่ API ไม่ใช่การซ่อนแท็บ)',
+  );
+  ok(
+    (await req('POST', '/admin/auth/line/link', { token: adminToken, body: { brandId: '00000000-0000-0000-0000-000000000000' } })).status === 403,
+    'ผูก LINE กับแบรนด์ที่ไม่มีสิทธิ์ → 403',
+  );
+  const unlinked = await req('POST', '/admin/auth/line/unlink', { token: adminToken, body: { brandId } });
+  ok(is2xx(unlinked.status) && unlinked.body?.unlinked === 0, 'เลิกผูก LINE (ยังไม่เคยผูก) → unlinked 0 ไม่ error');
+
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);
   if (fail > 0) {

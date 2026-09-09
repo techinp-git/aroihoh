@@ -20,7 +20,11 @@ export class AdminUsersService {
     const users = await this.prisma.adminUser.findMany({
       where: { merchantId },
       orderBy: { createdAt: 'asc' },
-      include: { adminBrands: { select: { brandId: true } } },
+      include: {
+        adminBrands: { select: { brandId: true } },
+        // US-61: ผูกบัญชี LINE ไว้กี่แบรนด์ (โหมดพนักงานใน LIFF) — ไม่ส่ง lineUserId ออกไป
+        lineLinks: { select: { brandId: true } },
+      },
     });
     // ไม่ส่ง passwordHash ออกไปเด็ดขาด
     return users.map((u) => ({
@@ -30,6 +34,7 @@ export class AdminUsersService {
       role: u.role,
       isActive: u.isActive,
       brandIds: u.adminBrands.map((b) => b.brandId),
+      lineLinkedBrandIds: u.lineLinks.map((l) => l.brandId),
       createdAt: u.createdAt,
     }));
   }
@@ -88,6 +93,17 @@ export class AdminUsersService {
       }
       return { id: updated.id, role: updated.role, isActive: updated.isActive };
     });
+  }
+
+  /**
+   * US-61: เจ้าของสั่งเลิกผูกบัญชี LINE ของพนักงานคนนั้น (มือถือหาย/ลาออก)
+   * ปิดบัญชี (isActive=false) ก็กันได้อยู่แล้ว แต่ตัวนี้ไว้ตัดเฉพาะทางเข้าทาง LIFF
+   */
+  async unlinkLine(merchantId: string, id: string) {
+    const user = await this.prisma.adminUser.findFirst({ where: { id, merchantId } });
+    if (!user) throw new NotFoundException('ไม่พบผู้ใช้');
+    const r = await this.prisma.adminLineLink.deleteMany({ where: { adminUserId: id } });
+    return { unlinked: r.count };
   }
 
   private async assertBrandsInMerchant(merchantId: string, brandIds?: string[]) {

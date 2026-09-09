@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -29,6 +30,12 @@ export class AdminUsersController {
   @Post()
   create(@CurrentAdmin() admin: AdminJwt, @Body() dto: CreateAdminUserDto) {
     return this.users.create(admin.merchantId, dto);
+  }
+
+  /** US-61: ตัดทางเข้าโหมดพนักงานใน LIFF ของคนนี้ (ลาออก/มือถือหาย) */
+  @Delete(':id/line-link')
+  unlinkLine(@CurrentAdmin() admin: AdminJwt, @Param('id') id: string) {
+    return this.users.unlinkLine(admin.merchantId, id);
   }
 
   @Patch(':id')
