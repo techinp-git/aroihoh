@@ -647,3 +647,56 @@ export const adjustCustomerPoints = (brandId: string, customerId: string, points
     `/admin/loyalty/customers/${customerId}/adjust?brandId=${encodeURIComponent(brandId)}`,
     { method: 'POST', body: JSON.stringify({ points, note }) },
   );
+
+// ── Rich Menu ตามกลุ่ม (audience) + default (owner) ──
+export interface RichMenuRow {
+  id: string; name: string; isDefault: boolean;
+  audienceId: string | null; audienceName: string | null;
+  priority: number; chatBarText: string;
+  published: boolean; enabled: boolean; assignedCount: number; hasImage: boolean;
+  updatedAt: string;
+}
+export interface RichMenuPublishResult {
+  published?: boolean; skipped?: boolean; lineRichMenuId?: string; error?: string; reason?: string;
+}
+export interface RichMenuCreateResult {
+  id: string; name: string; isDefault: boolean; audienceId: string | null;
+  priority: number; published: boolean; enabled: boolean; publish?: RichMenuPublishResult;
+}
+export interface RichMenuSyncResult {
+  skipped?: boolean; reason?: string;
+  changed?: number; unchanged?: number; movedToDefault?: number;
+  perMenu?: { name: string; count: number }[];
+}
+export interface RichMenuInput {
+  name?: string; audienceId?: string | null; priority?: number;
+  preset?: string; chatBarText?: string; enabled?: boolean;
+}
+
+// preset โซนสำเร็จรูป (ตรงกับ RICH_MENU_ZONE_PRESETS ฝั่ง backend)
+export const RICH_MENU_PRESETS: { key: string; label: string }[] = [
+  { key: 'default', label: 'มาตรฐาน (สั่ง·แต้ม·โปรไฟล์·ออเดอร์·โปรฯ·ติดต่อ)' },
+  { key: 'new_customer', label: 'ลูกค้าใหม่ (เน้นสั่ง·สมัครแต้ม)' },
+  { key: 'member', label: 'สมาชิก/ประจำ (เน้นแต้ม·แลกรางวัล)' },
+];
+
+export const listRichMenus = (brandId: string) =>
+  adminFetch<RichMenuRow[]>(`/admin/rich-menus?brandId=${encodeURIComponent(brandId)}`);
+export const createRichMenu = (brandId: string, body: RichMenuInput) =>
+  adminFetch<RichMenuCreateResult>(`/admin/rich-menus?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'POST', body: JSON.stringify(body),
+  });
+export const updateRichMenu = (brandId: string, id: string, body: RichMenuInput) =>
+  adminFetch<RichMenuCreateResult>(`/admin/rich-menus/${id}?brandId=${encodeURIComponent(brandId)}`, {
+    method: 'PATCH', body: JSON.stringify(body),
+  });
+export const deleteRichMenu = (brandId: string, id: string) =>
+  adminFetch<{ deleted: boolean }>(`/admin/rich-menus/${id}?brandId=${encodeURIComponent(brandId)}`, { method: 'DELETE' });
+export const publishRichMenu = (brandId: string, id: string) =>
+  adminFetch<RichMenuPublishResult>(`/admin/rich-menus/${id}/publish?brandId=${encodeURIComponent(brandId)}`, { method: 'POST' });
+export const syncRichMenus = (brandId: string) =>
+  adminFetch<RichMenuSyncResult>(`/admin/rich-menus/sync?brandId=${encodeURIComponent(brandId)}`, { method: 'POST' });
+
+// รูป Rich Menu ที่ generate ไว้ — ส่ง token ผ่าน query เพราะ <img> ใส่ header ไม่ได้ (เหมือน chatImageUrl)
+export const richMenuImageUrl = (id: string) =>
+  `${API_BASE}/admin/rich-menus/${id}/image?token=${encodeURIComponent(getAdminToken())}`;
