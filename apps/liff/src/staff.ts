@@ -98,6 +98,13 @@ export async function staffPasswordLogin(
   }
 }
 
+/** ผูกบัญชี LINE เข้ากับแอดมินที่ล็อกอินอยู่ตอนนี้ (ใช้ตอนกด "ลองผูกอีกครั้ง") */
+export const staffLink = (idToken: string) =>
+  adminApi<StaffSession>('/admin/auth/line/link', {
+    method: 'POST',
+    body: JSON.stringify({ brandId: BRAND_ID, idToken }),
+  });
+
 /** เลิกผูกบัญชี LINE นี้กับร้านนี้ (มือถือหาย/เปลี่ยนคนขาย) */
 export const staffUnlink = () =>
   adminApi<{ unlinked: number }>('/admin/auth/line/unlink', {
