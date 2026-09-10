@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import {
@@ -32,6 +32,13 @@ export class AdminAuthController {
   @Post('line/link')
   linkLine(@CurrentAdmin() admin: AdminJwt, @Body() dto: AdminLineLinkDto) {
     return this.auth.linkLine(admin.sub, dto.idToken, dto.brandId);
+  }
+
+  /** ถามความจริงจาก DB ว่าผูกไว้แล้วหรือยัง — UI ใช้ยืนยันแทนการเชื่อ response ของคำสั่งผูก */
+  @UseGuards(AdminJwtGuard)
+  @Get('line/status')
+  lineStatus(@CurrentAdmin() admin: AdminJwt, @Query('brandId') brandId: string) {
+    return this.auth.lineLinkStatus(admin.sub, brandId);
   }
 
   @UseGuards(AdminJwtGuard)

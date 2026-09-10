@@ -1085,6 +1085,17 @@ async function main() {
     (await req('POST', '/admin/auth/line/link', { token: adminToken, body: { brandId: '00000000-0000-0000-0000-000000000000' } })).status === 403,
     'ผูก LINE กับแบรนด์ที่ไม่มีสิทธิ์ → 403',
   );
+  // ความจริงจาก DB ต้องขัดกับ response ของคำสั่งผูกไม่ได้ (ไม่ส่ง idToken = ไม่ผูก = status ต้องเป็น false)
+  const linkStatus = await req('GET', `/admin/auth/line/status?brandId=${brandId}`, { token: adminToken });
+  ok(
+    is2xx(linkStatus.status) && linkStatus.body?.linked === false && linkStatus.body?.linkedAt === null,
+    'status ผูก LINE อ่านจาก DB → linked false (ตรงกับที่ link ตอบว่าไม่ได้ผูก)',
+    JSON.stringify(linkStatus.body),
+  );
+  ok(
+    (await req('GET', `/admin/auth/line/status?brandId=${brandId}`)).status === 401,
+    'status ผูก LINE ต้องมี admin token → 401',
+  );
   const unlinked = await req('POST', '/admin/auth/line/unlink', { token: adminToken, body: { brandId } });
   ok(is2xx(unlinked.status) && unlinked.body?.unlinked === 0, 'เลิกผูก LINE (ยังไม่เคยผูก) → unlinked 0 ไม่ error');
 

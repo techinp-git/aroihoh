@@ -5,6 +5,7 @@ import {
   confirmRedemption,
   previewRedemption,
   staffLink,
+  staffLinkStatus,
   staffPasswordLogin,
   staffUnlink,
   type RedemptionPreview,
@@ -180,6 +181,8 @@ function Scanner({
   // ผูกเครื่องไม่สำเร็จ = ครั้งหน้าเปิด LIFF แล้วแท็บนี้จะไม่โผล่ ต้องบอกให้เห็น ไม่ใช่ปล่อยผ่าน
   const [linkErr, setLinkErr] = useState('');
   const [linking, setLinking] = useState(false);
+  /** ผูกไว้จริงไหม — null = ยังไม่ได้ถาม · ถามจาก DB ไม่เชื่อค่าที่ติดมากับ response */
+  const [linkedInDb, setLinkedInDb] = useState<boolean | null>(null);
   const [manual, setManual] = useState('');
   const [preview, setPreview] = useState<RedemptionPreview | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -194,6 +197,15 @@ function Scanner({
 
   // ปิดกล้องเมื่อออกจากแท็บ — ไม่งั้นไฟกล้องค้างและกินแบตมือถือคนขาย
   useEffect(() => stopCamera, []);
+
+  // ถามความจริงจาก DB ทุกครั้งที่เข้าหน้านี้ (เงียบ ๆ ถามไม่ได้ก็ไม่เป็นไร)
+  const checkLinked = () =>
+    staffLinkStatus()
+      .then((r) => setLinkedInDb(r.linked))
+      .catch(() => setLinkedInDb(null));
+  useEffect(() => {
+    void checkLinked();
+  }, []);
 
   const expired = (e: unknown) => (e as { status?: number }).status === 401;
 
@@ -316,7 +328,15 @@ function Scanner({
     setLinking(true);
     setLinkErr('');
     try {
-      onSession(await staffLink(token));
+      const sess = await staffLink(token);
+      // เชื่อ DB ไม่ใช่ค่าที่ตอบกลับมา — ผูกไม่ติดจริงต้องยังเห็นแถบเตือนอยู่
+      const status = await staffLinkStatus().catch(() => null);
+      setLinkedInDb(status?.linked ?? null);
+      if (status && !status.linked) {
+        setLinkErr('server ตอบว่าผูกแล้วแต่ตรวจซ้ำไม่เจอ — แจ้งผู้ดูแลระบบ');
+        return;
+      }
+      onSession(sess);
     } catch (e) {
       setLinkErr((e as Error).message);
     } finally {
@@ -326,8 +346,8 @@ function Scanner({
 
   return (
     <>
-      {/* session.linked === false = ล็อกอินผ่าน แต่ยังไม่ได้จำเครื่องนี้ไว้ */}
-      {session.linked === false && (
+      {/* ยึดคำตอบจาก DB ก่อน (linkedInDb) · ถามไม่ได้ค่อยตกมาใช้ค่าที่ติดมากับ response */}
+      {(linkedInDb === false || (linkedInDb === null && session.linked === false)) && (
         <div className="card">
           <div className="alert">
             ยังไม่ได้ผูกเครื่องนี้กับบัญชีพนักงาน — ใช้สแกนรอบนี้ได้ตามปกติ
