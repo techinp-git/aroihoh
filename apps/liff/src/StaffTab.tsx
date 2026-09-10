@@ -4,6 +4,7 @@ import {
   clearStaffToken,
   confirmRedemption,
   previewRedemption,
+  staffLink,
   staffPasswordLogin,
   staffUnlink,
   type RedemptionPreview,
@@ -33,6 +34,19 @@ const vibrate = (ms: number | number[]) => {
 
 /** แยกชื่อไว้เพราะในคอมโพเนนต์ `confirm` เป็นชื่อฟังก์ชันยืนยันคูปองไปแล้ว */
 const askConfirm = (msg: string) => window.confirm(msg);
+
+/**
+ * ดึง ID token สด ๆ จาก LINE ตอนจะผูก — ไม่พึ่ง state ที่ตั้งไว้ตอน boot
+ * (ค่านั้นว่างเมื่อไหร่ การผูกจะเงียบหายไปเฉย ๆ ซึ่งเคยเกิดมาแล้ว)
+ * รับ fallback เป็นค่าจาก boot ไว้เผื่อเรียกตอนนี้ไม่ได้
+ */
+function liveIdToken(fallback?: string): string {
+  try {
+    return liff.getIDToken() || fallback || '';
+  } catch {
+    return fallback || '';
+  }
+}
 
 /** LINE เปิดให้ใช้ตัวสแกนของแอปเองไหม (ต้องเปิด "Scan QR" ใน LIFF settings ด้วย) */
 function nativeScanAvailable(): boolean {
@@ -100,7 +114,7 @@ function StaffLogin({
     setBusy(true);
     setErr('');
     try {
-      onSession(await staffPasswordLogin(email.trim(), password, idToken));
+      onSession(await staffPasswordLogin(email.trim(), password, liveIdToken(idToken)));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -163,6 +177,9 @@ function Scanner({
 
   const [scanning, setScanning] = useState(false);
   const [camError, setCamError] = useState('');
+  // ผูกเครื่องไม่สำเร็จ = ครั้งหน้าเปิด LIFF แล้วแท็บนี้จะไม่โผล่ ต้องบอกให้เห็น ไม่ใช่ปล่อยผ่าน
+  const [linkErr, setLinkErr] = useState('');
+  const [linking, setLinking] = useState(false);
   const [manual, setManual] = useState('');
   const [preview, setPreview] = useState<RedemptionPreview | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -290,8 +307,39 @@ function Scanner({
     onExit();
   };
 
+  const retryLink = async () => {
+    const token = liveIdToken();
+    if (!token) {
+      setLinkErr('เครื่องนี้ยังไม่ได้เปิดผ่านแอป LINE (ไม่มี ID token) — เปิดจากลิงก์ใน LINE แล้วลองใหม่');
+      return;
+    }
+    setLinking(true);
+    setLinkErr('');
+    try {
+      onSession(await staffLink(token));
+    } catch (e) {
+      setLinkErr((e as Error).message);
+    } finally {
+      setLinking(false);
+    }
+  };
+
   return (
     <>
+      {/* session.linked === false = ล็อกอินผ่าน แต่ยังไม่ได้จำเครื่องนี้ไว้ */}
+      {session.linked === false && (
+        <div className="card">
+          <div className="alert">
+            ยังไม่ได้ผูกเครื่องนี้กับบัญชีพนักงาน — ใช้สแกนรอบนี้ได้ตามปกติ
+            แต่ครั้งหน้าเปิด LIFF แท็บนี้จะไม่โผล่เอง ต้องเข้าด้วยลิงก์ <b>?view=staff</b> แล้วล็อกอินใหม่
+          </div>
+          {linkErr && <div className="alert">{linkErr}</div>}
+          <button className="btn primary" onClick={retryLink} disabled={linking}>
+            {linking ? 'กำลังผูก…' : '🔗 ผูกเครื่องนี้ไว้'}
+          </button>
+        </div>
+      )}
+
       <div className="card">
         <div className="staff-who">
           <span>
