@@ -105,6 +105,16 @@ export const staffLink = (idToken: string) =>
     body: JSON.stringify({ brandId: BRAND_ID, idToken }),
   });
 
+/**
+ * ถามจาก DB ว่าเครื่องนี้ผูกไว้แล้วจริงไหม
+ * ห้ามเชื่อ `linked` ที่ติดมากับ response ของคำสั่งผูกอย่างเดียว — เคยเจอจอบอกว่าผูกแล้ว
+ * ทั้งที่ตารางว่าง แล้วไม่มีใครจับได้จนกลับมาเปิดใหม่แล้วแท็บหาย
+ */
+export const staffLinkStatus = () =>
+  adminApi<{ linked: boolean; linkedAt: string | null }>(
+    `/admin/auth/line/status?brandId=${encodeURIComponent(BRAND_ID)}`,
+  );
+
 /** เลิกผูกบัญชี LINE นี้กับร้านนี้ (มือถือหาย/เปลี่ยนคนขาย) */
 export const staffUnlink = () =>
   adminApi<{ unlinked: number }>('/admin/auth/line/unlink', {

@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { canScanRedemptions } from './staff-mode';
 
 @Injectable()
 export class AdminAuthService {
+  private readonly log = new Logger(AdminAuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -99,7 +102,25 @@ export class AdminAuthService {
       });
       linked = true;
     }
+    // ไม่ log lineUserId (PII ตามกติกาเหล็ก #6) — พอรู้ว่ามี token มาไหมและจบยังไง
+    this.log.log(
+      `line-link admin=${adminId} brand=${brandId} idToken=${idToken ? 'yes' : 'no'} linked=${linked}`,
+    );
     return { ...this.withStaffScope(auth, brandId), linked };
+  }
+
+  /**
+   * ความจริงจาก DB ว่าเครื่องนี้ผูกไว้หรือยัง
+   *
+   * มีไว้เพราะเคยเจอสภาพ "จอบอกว่าผูกแล้ว แต่ตารางว่าง" — UI ไม่ควรเชื่อค่า `linked`
+   * ที่ติดมากับ response ของคำสั่งผูกเพียงอย่างเดียว ต้องถามซ้ำจากของจริงได้
+   */
+  async lineLinkStatus(adminId: string, brandId: string) {
+    const link = await this.prisma.adminLineLink.findFirst({
+      where: { adminUserId: adminId, brandId },
+      select: { linkedAt: true },
+    });
+    return { linked: !!link, linkedAt: link?.linkedAt ?? null };
   }
 
   /** เลิกผูก — ไม่ส่ง brandId = เลิกทุกแบรนด์ (เช่นทำมือถือหาย) */
