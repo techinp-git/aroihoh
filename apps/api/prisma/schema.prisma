@@ -33,9 +33,10 @@ model Merchant {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  brands     Brand[]
-  kitchens   Kitchen[]
-  adminUsers AdminUser[]
+  brands        Brand[]
+  kitchens      Kitchen[]
+  adminUsers    AdminUser[]
+  deliverySlots DeliverySlot[]
 
   @@map("merchants")
 }
@@ -72,28 +73,28 @@ model Brand {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  merchant      Merchant       @relation(fields: [merchantId], references: [id])
-  brandKitchens BrandKitchen[]
-  categories    MenuCategory[]
-  menuItems     MenuItem[]
-  customers     Customer[]
-  addresses     Address[]
-  loyaltyBatches      LoyaltyQrBatch[]
-  loyaltyCodes        LoyaltyQrCode[]
-  loyaltyRewards      LoyaltyReward[]
-  loyaltyRedemptions  LoyaltyRedemption[]
-  loyaltyLedger       LoyaltyTransaction[]
-  orders        Order[]
-  payments      Payment[]
-  messageLogs   MessageLog[]
-  adminBrands   AdminBrand[]
-  adminLineLinks AdminLineLink[]
-  auditLogs     AuditLog[]
-  chatMessages  ChatMessage[]
-  broadcasts    Broadcast[]
-  contents      ContentLibrary[]
-  audiences     Audience[]
-  richMenus     RichMenu[]
+  merchant           Merchant             @relation(fields: [merchantId], references: [id])
+  brandKitchens      BrandKitchen[]
+  categories         MenuCategory[]
+  menuItems          MenuItem[]
+  customers          Customer[]
+  addresses          Address[]
+  loyaltyBatches     LoyaltyQrBatch[]
+  loyaltyCodes       LoyaltyQrCode[]
+  loyaltyRewards     LoyaltyReward[]
+  loyaltyRedemptions LoyaltyRedemption[]
+  loyaltyLedger      LoyaltyTransaction[]
+  orders             Order[]
+  payments           Payment[]
+  messageLogs        MessageLog[]
+  adminBrands        AdminBrand[]
+  adminLineLinks     AdminLineLink[]
+  auditLogs          AuditLog[]
+  chatMessages       ChatMessage[]
+  broadcasts         Broadcast[]
+  contents           ContentLibrary[]
+  audiences          Audience[]
+  richMenus          RichMenu[]
 
   @@unique([merchantId, slug])
   @@index([merchantId])
@@ -119,12 +120,17 @@ model Kitchen {
   openTime      String? // US-16: เวลาเปิด "HH:MM" (null = เปิดตลอด)
   closeTime     String?
 
+  /// US-22: เวลาปิดรับออเดอร์ของวันถัดไป "HH:MM" เวลาไทย (D-1 cutoff)
+  /// อยู่ที่ครัวเพราะรอบผลิต/รอบรถเป็นสมบัติของครัว — หลายแบรนด์ที่ใช้ครัวเดียวกันต้องรวมรอบเดียวกัน
+  preorderCutoff String @default("20:00")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   merchant      Merchant          @relation(fields: [merchantId], references: [id])
   brandKitchens BrandKitchen[]
   feeRules      DeliveryFeeRule[]
+  deliverySlots DeliverySlot[]
   orders        Order[]
 
   @@index([merchantId])
@@ -165,18 +171,44 @@ model DeliveryFeeRule {
   @@map("delivery_fee_rules")
 }
 
+/// US-22: รอบส่งของวันถัดไป (D-1) — ตั้งได้หลายรอบต่อครัว
+/// ออเดอร์ล่วงหน้าเก็บเวลาเริ่มรอบไว้ที่ orders.scheduledAt (ไม่มี FK มาที่นี่
+/// เพื่อให้แก้/ปิดรอบได้โดยไม่กระทบออเดอร์ที่จองไปแล้ว — ใบสรุปยอดผลิตมี bucket
+/// "ไม่ตรงรอบ" รองรับออเดอร์ที่หลุดกรอบเวลาใหม่)
+model DeliverySlot {
+  id         String @id @default(uuid())
+  merchantId String // tenant key (กติกาเหล็ก #1)
+  kitchenId  String
+
+  name      String // "รอบเที่ยง" / "รอบเย็น"
+  startTime String // "HH:MM" เวลาไทย — ช่วงที่บอกลูกค้าว่าของจะถึง
+  endTime   String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  kitchen  Kitchen  @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@index([kitchenId])
+  @@index([merchantId])
+  @@map("delivery_slots")
+}
+
 // ─────────────────────────── Customers (PII — PDPA) ───────────────────────────
 
 model Customer {
-  id          String   @id @default(uuid())
-  brandId     String
-  lineUserId  String
-  displayName String?
-  pictureUrl  String?
-  phoneEnc    String? // เข้ารหัส — ห้าม log
-  tags        String[] @default([]) // US-21: แท็กลูกค้า (VIP, ประจำ, ฯลฯ)
+  id                     String    @id @default(uuid())
+  brandId                String
+  lineUserId             String
+  displayName            String?
+  pictureUrl             String?
+  phoneEnc               String? // เข้ารหัส — ห้าม log
+  tags                   String[]  @default([]) // US-21: แท็กลูกค้า (VIP, ประจำ, ฯลฯ)
   /// PDPA: ลูกค้ากดปฏิเสธข่าวสาร — ต้องเคารพเสมอ ไม่ว่าจะเคยยินยอมมาก่อนหรือไม่
-  marketingOptedOut Boolean @default(false)
+  marketingOptedOut      Boolean   @default(false)
   /// PDPA ม.19: ยินยอมรับข่าวสารเมื่อไร (null = ยังไม่เคยยินยอม → ส่งการตลาดไม่ได้)
   marketingConsentAt     DateTime?
   /// มาจากไหน: 'legacy' (ยกมาจากระบบ opt-out เดิม) | 'liff' (ลูกค้ากดเอง) | 'admin'
@@ -185,19 +217,19 @@ model Customer {
   policyAcceptedVersion  String?
   policyAcceptedAt       DateTime?
   /// US-50: cache ของ SUM(loyalty_transactions.points) — อัปเดตใน transaction เดียวกับ ledger เสมอ ห้ามติดลบ
-  pointsBalance     Int     @default(0)
+  pointsBalance          Int       @default(0)
   /// Rich Menu ตามกลุ่ม: lineRichMenuId ที่ผูกให้ล่าสุด (null = อยู่ default) — ให้ sync diff ได้
-  assignedRichMenuId String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  assignedRichMenuId     String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  brand           Brand                @relation(fields: [brandId], references: [id])
-  addresses       Address[]
-  orders          Order[]
-  chatMessages    ChatMessage[]
-  loyaltyCodes    LoyaltyQrCode[]
-  redemptions     LoyaltyRedemption[]
-  loyaltyLedger   LoyaltyTransaction[]
+  brand         Brand                @relation(fields: [brandId], references: [id])
+  addresses     Address[]
+  orders        Order[]
+  chatMessages  ChatMessage[]
+  loyaltyCodes  LoyaltyQrCode[]
+  redemptions   LoyaltyRedemption[]
+  loyaltyLedger LoyaltyTransaction[]
 
   @@unique([brandId, lineUserId])
   @@index([brandId])
@@ -337,7 +369,8 @@ model Order {
 
   note           String?
   cancelReason   String?
-  scheduledAt    DateTime? // US-22/US-28 pre-order
+  /// US-22: เวลาเริ่มรอบส่งที่ลูกค้าเลือก (null = สั่งรับวันนี้ตามปกติ)
+  scheduledAt    DateTime?
   idempotencyKey String    @unique // US-04: กันสร้างซ้ำ
 
   createdAt DateTime @default(now())
@@ -351,6 +384,7 @@ model Order {
   payments Payment[]
 
   @@index([brandId, status])
+  @@index([brandId, scheduledAt]) // US-22: ใบสรุปยอดผลิตกรองด้วยช่วงเวลาของรอบส่ง
   @@index([customerId])
   @@map("orders")
 }
@@ -420,17 +454,17 @@ enum MessageStatus {
 
 // กันส่งซ้ำด้วย dedupeKey (เช่น orderId+status) + คุมโควตา LINE
 model MessageLog {
-  id                String        @id @default(uuid())
+  id                String          @id @default(uuid())
   brandId           String
   customerId        String?
   orderId           String?
   type              MessageType
   channel           MessageChannel? // reply/push — ใช้จริงตอนส่งออก (ดูสัดส่วนประหยัดโควตา)
-  dedupeKey         String        @unique
-  status            MessageStatus @default(queued)
+  dedupeKey         String          @unique
+  status            MessageStatus   @default(queued)
   providerMessageId String?
   error             String?
-  createdAt         DateTime      @default(now())
+  createdAt         DateTime        @default(now())
 
   brand Brand @relation(fields: [brandId], references: [id])
 
@@ -684,9 +718,9 @@ model LoyaltyQrCode {
   usedAt           DateTime?
   createdAt        DateTime          @default(now())
 
-  brand    Brand          @relation(fields: [brandId], references: [id])
-  batch    LoyaltyQrBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  usedBy   Customer?      @relation(fields: [usedByCustomerId], references: [id])
+  brand  Brand          @relation(fields: [brandId], references: [id])
+  batch  LoyaltyQrBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  usedBy Customer?      @relation(fields: [usedByCustomerId], references: [id])
 
   @@index([batchId, status])
   @@index([brandId, usedByCustomerId])

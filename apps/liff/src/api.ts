@@ -41,14 +41,19 @@ async function api<T>(path: string, opts: RequestInit = {}, auth = true): Promis
   });
   if (!res.ok) {
     let detail = '';
+    let code = '';
     try {
       const j = await res.json();
-      detail = j.message?.reason || j.message || JSON.stringify(j);
+      // 422 ที่เราออกเอง (OUT_OF_ZONE / PREORDER_CUTOFF_PASSED) เป็น object แบน ๆ
+      // ไม่ได้ซ้อนใน message → ถ้าไม่อ่าน reason ตรงนี้ ลูกค้าจะเห็น JSON ดิบบนจอ
+      detail = j.reason || j.message?.reason || j.message || JSON.stringify(j);
+      code = j.code || j.message?.code || '';
     } catch {
       /* ignore */
     }
     const err = new Error(detail || `HTTP ${res.status}`);
     (err as any).status = res.status;
+    (err as any).code = code; // ให้ caller แยกเคสได้ ไม่ต้องอ่านข้อความไทย
     throw err;
   }
   return res.status === 204 ? (null as T) : ((await res.json()) as T);
@@ -62,6 +67,8 @@ export interface OrderResult {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
   subtotal: number; deliveryFee: number; discount: number; total: number;
   items: OrderItemLite[]; createdAt: string; cancelReason: string | null;
+  /** US-22: เวลาเริ่มรอบส่งที่จองไว้ (null = รับวันนี้) */
+  scheduledAt?: string | null;
 }
 
 export const devLogin = (name?: string) =>
@@ -88,11 +95,44 @@ export const getMenu = () => api<MenuCategory[]>(`/menu/${BRAND_ID}`, {}, false)
 export interface DeliveryOrigin { name: string; lat: number; lng: number; maxDistanceKm: number }
 export const getDeliveryOrigin = () => api<DeliveryOrigin>(`/delivery/origin/${BRAND_ID}`, {}, false);
 
-export const checkDelivery = (lat: number, lng: number) =>
+/**
+ * US-22: ส่ง scheduled=true เมื่อลูกค้าเลือกรอบพรุ่งนี้
+ * ไม่งั้นตอนหัวค่ำ (ครัวปิดแล้วแต่ยังไม่ถึงเวลาปิดรับ) หน้าเช็คเอาต์จะขึ้น "นอกเวลาทำการ"
+ * ทั้งที่กดสั่งได้จริง — preview ต้องตรงกับที่ server จะตัดสินตอนสร้างออเดอร์
+ */
+export const checkDelivery = (lat: number, lng: number, scheduled = false) =>
   api<DeliveryCheck>('/delivery/check', {
     method: 'POST',
-    body: JSON.stringify({ brandId: BRAND_ID, lat, lng }),
+    body: JSON.stringify({ brandId: BRAND_ID, lat, lng, scheduled }),
   }, false);
+
+// ── US-22: รอบส่งล่วงหน้า D-1 ──
+export interface DeliverySlot {
+  id: string;
+  name: string;
+  /** "HH:MM" เวลาไทย — ช่วงที่ของจะถึง */
+  startTime: string;
+  endTime: string;
+  serviceDate: string;
+  startAt: string;
+  endAt: string;
+  /** ปิดรับเมื่อไร (ISO) — นับถอยหลังด้วยนาฬิกาเครื่องตัวเองได้ */
+  cutoffAt: string;
+  /** ปิดรับแล้ว = กดเลือกไม่ได้ (server ก็ปฏิเสธเหมือนกัน) */
+  closed: boolean;
+  msLeft: number;
+}
+export interface DeliverySlots {
+  cutoffTime: string;
+  /** นาฬิกาของ server ตอนที่ตอบมา — ใช้ตั้งต้นนับถอยหลัง (นาฬิกาเครื่องอาจตั้งผิด) */
+  now: string;
+  serviceDate: string;
+  cutoffAt: string;
+  closed: boolean;
+  slots: DeliverySlot[];
+}
+export const getDeliverySlots = () =>
+  api<DeliverySlots>(`/delivery/slots/${BRAND_ID}`, {}, false);
 
 export interface CreateOrderBody {
   idempotencyKey: string;
@@ -104,6 +144,8 @@ export interface CreateOrderBody {
   saveAddress?: boolean;
   /** US-57: ใช้แต้มแลกส่วนลดกับออเดอร์นี้ — ยอดส่วนลดคิดฝั่ง server */
   loyaltyRewardId?: string;
+  /** US-22: รอบส่งของพรุ่งนี้ (ไม่ส่ง = รับวันนี้ตามปกติ) · server เช็คเวลาปิดรับเอง */
+  deliverySlotId?: string;
   paymentMethod: 'cod' | 'promptpay';
   note?: string;
 }

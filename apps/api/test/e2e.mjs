@@ -11,6 +11,7 @@
  *  - admin endpoint กัน customer JWT (RBAC)               [session decision]
  *  - status transition ไล่ลำดับ (ถอยหลัง → error)          [US-12]
  *  - พักรับออเดอร์ → order 422                              [US-16]
+ *  - สั่งล่วงหน้า: ก่อน cutoff ผ่าน / หลัง cutoff 422 / ใบสรุปยอดผลิต / ข้ามครัว 404  [US-22]
  */
 
 import { createHmac } from 'node:crypto';
@@ -1098,6 +1099,311 @@ async function main() {
   );
   const unlinked = await req('POST', '/admin/auth/line/unlink', { token: adminToken, body: { brandId } });
   ok(is2xx(unlinked.status) && unlinked.body?.unlinked === 0, 'เลิกผูก LINE (ยังไม่เคยผูก) → unlinked 0 ไม่ error');
+
+  // ── US-22: สั่งล่วงหน้า D-1 (เวลาปิดรับ + รอบส่ง + ใบสรุปยอดผลิต) ──
+  console.log('\n▸ US-22 สั่งล่วงหน้า D-1');
+
+  // รอบส่งเป็น public (LIFF เรียกก่อนล็อกอิน) — เหมือน /delivery/origin
+  const slots0 = await req('GET', `/delivery/slots/${brandId}`);
+  ok(
+    slots0.status === 200 && Array.isArray(slots0.body?.slots) && slots0.body.slots.length >= 2,
+    'GET /delivery/slots/:brandId (public) คืนรอบส่งที่ seed ไว้',
+    JSON.stringify(slots0.body),
+  );
+  ok(slots0.body?.cutoffTime === '20:00', `เวลาปิดรับเริ่มต้น 20:00 ได้ ${slots0.body?.cutoffTime}`);
+  const slotNoon = slots0.body?.slots?.[0];
+  const slotEve = slots0.body?.slots?.[1];
+  ok(
+    !!slotNoon?.cutoffAt && !!slotNoon?.startAt && typeof slotNoon?.closed === 'boolean',
+    'รอบส่งมี cutoffAt/startAt/closed ให้ LIFF ตัดสินใจได้',
+  );
+
+  // '23:59' เป็นค่าสูงสุดที่ตั้งได้ → ยังไม่ถึงเวลาปิดรับเสมอ ยกเว้น "นาทีสุดท้ายของวัน"
+  // ถ้าเทสต์ไปโดนนาทีนั้นพอดี รอข้ามวันก่อน (เกิดได้ 1 ใน 1440 รอบ) ให้ผลคงที่เสมอ
+  const bkkHHMM = (iso) =>
+    new Date(iso).toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok',
+    });
+  if (bkkHHMM(slots0.body.now) >= '23:59') {
+    console.log('  … รอข้ามวัน 61 วิ (เลี่ยงนาทีสุดท้ายของวันไทย)');
+    await new Promise((r) => setTimeout(r, 61_000));
+  }
+
+  // ตั้งเวลาปิดรับให้ยังไม่ปิด → สั่งรอบพรุ่งนี้ต้องผ่าน
+  const cutoffOpen = await req('PATCH', `/admin/preorder/settings?brandId=${brandId}`, {
+    token: adminToken, body: { cutoffTime: '23:59' },
+  });
+  ok(
+    is2xx(cutoffOpen.status) && cutoffOpen.body?.cutoffTime === '23:59',
+    'ตั้งเวลาปิดรับได้ (เก็บใน DB ไม่ใช่ค่าคงที่ในโค้ด)',
+    JSON.stringify(cutoffOpen.body),
+  );
+  const slotsOpen = await req('GET', `/delivery/slots/${brandId}`);
+  ok(slotsOpen.body?.slots?.every((s) => s.closed === false), 'ก่อนเวลาปิดรับ → ทุกรอบเลือกได้');
+
+  const preId = slotsOpen.body.slots[0].id;
+  const preServiceDate = slotsOpen.body.serviceDate;
+
+  // ใบสรุปก่อนสั่ง — ยอดต้องเทียบเป็น "ส่วนต่าง" ไม่ใช่ค่าสัมบูรณ์
+  // (DB ของ CI/dev อาจมีออเดอร์ล่วงหน้าค้างจากรอบก่อน)
+  const sumBefore = await req('GET', `/admin/preorder/summary?date=${preServiceDate}`, { token: adminToken });
+  ok(is2xx(sumBefore.status), 'GET /admin/preorder/summary', JSON.stringify(sumBefore.body?.totals));
+  const boxesBefore = sumBefore.body?.totals?.boxCount ?? 0;
+  const dropsBefore = sumBefore.body?.totals?.dropCount ?? 0;
+
+  const preCust = await req('POST', '/auth/dev-login', { body: { brandId, name: 'e2e-pre-' + uuid() } });
+  const preTok = preCust.body?.accessToken;
+  const preOrder = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 3 }],
+      deliveryAddress: { detail: 'คอนโดสั่งล่วงหน้า', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: preId,
+    },
+  });
+  ok(is2xx(preOrder.status), 'สั่งรอบพรุ่งนี้ก่อนเวลาปิดรับ → สำเร็จ', JSON.stringify(preOrder.body));
+  ok(!!preOrder.body?.scheduledAt, 'ออเดอร์ล่วงหน้าเก็บ scheduledAt ไว้', `ได้ ${preOrder.body?.scheduledAt}`);
+  ok(
+    preOrder.body?.scheduledAt === slotsOpen.body.slots[0].startAt,
+    'scheduledAt = เวลาเริ่มรอบที่เลือก (server กำหนด ไม่ใช่ client)',
+    `ได้ ${preOrder.body?.scheduledAt} เทียบ ${slotsOpen.body.slots[0].startAt}`,
+  );
+  // กติกาเหล็ก #2: ออเดอร์ล่วงหน้าก็ยังคิดเงินฝั่ง server เหมือนกัน
+  ok(
+    preOrder.body?.total === unitPrice * 3 + 1500,
+    `ออเดอร์ล่วงหน้าคิดเงินฝั่ง server (${unitPrice * 3 + 1500}) ได้ ${preOrder.body?.total}`,
+  );
+
+  // ใบสรุปยอดผลิตต้องรวมยอดเพิ่มขึ้นตามที่สั่งจริง
+  const sumAfter = await req('GET', `/admin/preorder/summary?date=${preServiceDate}`, { token: adminToken });
+  ok(
+    sumAfter.body?.totals?.boxCount === boxesBefore + 3,
+    `ใบสรุปรวมกล่องถูก (${boxesBefore} + 3) ได้ ${sumAfter.body?.totals?.boxCount}`,
+  );
+  const grp = sumAfter.body?.groups?.find((g) => g.slotId === preId);
+  ok(!!grp, 'ใบสรุปแยกตามรอบส่ง');
+  const mt = grp?.menuTotals?.find((m) => m.menuItemId === item.id);
+  ok(mt && mt.qty >= 3, `ยอดต่อเมนูในรอบนั้นรวมถูก (>=3) ได้ ${mt?.qty}`, JSON.stringify(grp?.menuTotals));
+  ok(
+    (sumAfter.body?.totals?.dropCount ?? 0) >= Math.max(1, dropsBefore),
+    'ใบสรุปนับจุดส่ง (กี่กล่องต่อจุด = ตัวหารค่าส่ง)',
+  );
+  const drop = grp?.drops?.find((d) => d.orders?.some((o) => o.orderId === preOrder.body?.id));
+  ok(!!drop && drop.boxes >= 3, 'ออเดอร์ถูกจัดกลุ่มเข้าจุดส่ง พร้อมจำนวนกล่องต่อจุด', JSON.stringify(drop));
+
+  // หัวใจของ D-1: นอกเวลาทำการแล้วแต่ยังสั่งล่วงหน้าได้ (ลูกค้าสั่งข้าวพรุ่งนี้ตอนหัวค่ำ)
+  // เลือกช่วงเวลาทำการ 1 นาทีที่ "ไม่คลุมเวลาปัจจุบัน" → ผลคงที่ไม่ว่ารันตอนไหน
+  const closedWindow = bkkHHMM(slotsOpen.body.now) < '12:00'
+    ? { openTime: '23:58', closeTime: '23:59' }
+    : { openTime: '00:00', closeTime: '00:01' };
+  const setHours = await req('PATCH', `/admin/store/hours?brandId=${brandId}`, {
+    token: adminToken, body: closedWindow,
+  });
+  ok(is2xx(setHours.status) && setHours.body?.acceptingNow === false, 'ตั้งเวลาทำการให้ปิดอยู่ตอนนี้');
+  const todayWhenClosed = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'นอกเวลาทำการ', ...IN_ZONE },
+      paymentMethod: 'cod',
+    },
+  });
+  ok(todayWhenClosed.status === 422, 'นอกเวลาทำการ: สั่งรับวันนี้ → 422 (เหมือนเดิม)', `ได้ ${todayWhenClosed.status}`);
+  const preWhenClosed = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'สั่งล่วงหน้าตอนร้านปิด', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: preId,
+    },
+  });
+  ok(
+    is2xx(preWhenClosed.status),
+    'นอกเวลาทำการ: สั่งล่วงหน้ารอบพรุ่งนี้ → ยังได้ (ถ้าไม่ได้ โมเดล D-1 ใช้ไม่ได้ทั้งเรื่อง)',
+    JSON.stringify(preWhenClosed.body),
+  );
+  // /delivery/check ต้องตอบตรงกับที่ server จะตัดสินตอนสร้างออเดอร์ ไม่งั้น LIFF โชว์ผิด
+  const chkToday = await req('POST', '/delivery/check', { body: { brandId, ...IN_ZONE } });
+  ok(chkToday.body?.inZone === false, 'delivery/check (รับวันนี้) นอกเวลาทำการ → inZone false');
+  const chkPre = await req('POST', '/delivery/check', { body: { brandId, ...IN_ZONE, scheduled: true } });
+  ok(
+    chkPre.body?.inZone === true && chkPre.body?.deliveryFee === 1500,
+    'delivery/check (ล่วงหน้า) นอกเวลาทำการ → inZone true + ค่าส่งเท่าเดิม',
+    JSON.stringify(chkPre.body),
+  );
+  // พักรับออเดอร์ (ปุ่มฉุกเฉิน) ต้องกันออเดอร์ล่วงหน้าด้วย
+  await req('PATCH', `/admin/store/pause?brandId=${brandId}`, { token: adminToken, body: { isOpen: false } });
+  const prePaused = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'ร้านพักอยู่', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: preId,
+    },
+  });
+  ok(prePaused.status === 422, 'ร้านพักรับออเดอร์ → สั่งล่วงหน้าก็ไม่ได้ → 422', `ได้ ${prePaused.status}`);
+  await req('PATCH', `/admin/store/pause?brandId=${brandId}`, { token: adminToken, body: { isOpen: true } });
+  await req('PATCH', `/admin/store/hours?brandId=${brandId}`, {
+    token: adminToken, body: { openTime: null, closeTime: null },
+  });
+
+  // เลยเวลาปิดรับ → 422 พร้อม code ให้ LIFF แยกเคส
+  // ตั้ง cutoff = เวลาไทยปัจจุบัน → "ถึงเวลาปิดรับแล้ว" แน่นอน แม้นาฬิกาเดินต่อระหว่างเทสต์
+  const nowTH = bkkHHMM(slotsOpen.body.now);
+  const cutoffPast = await req('PATCH', `/admin/preorder/settings?brandId=${brandId}`, {
+    token: adminToken, body: { cutoffTime: nowTH },
+  });
+  ok(is2xx(cutoffPast.status), `ตั้งเวลาปิดรับเป็น ${nowTH} (เลยไปแล้ว)`);
+  const slotsClosed = await req('GET', `/delivery/slots/${brandId}`);
+  ok(
+    slotsClosed.body?.closed === true && slotsClosed.body?.slots?.every((s) => s.closed === true),
+    'หลังเวลาปิดรับ → ทุกรอบปิด (LIFF ปิดปุ่มพร้อมบอกเหตุผล)',
+    JSON.stringify(slotsClosed.body?.slots?.map((s) => s.closed)),
+  );
+  const lateOrder = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'สายไปแล้ว', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: preId,
+    },
+  });
+  ok(lateOrder.status === 422, 'สั่งรอบพรุ่งนี้หลังเวลาปิดรับ → 422', `ได้ ${lateOrder.status}`);
+  ok(
+    lateOrder.body?.code === 'PREORDER_CUTOFF_PASSED' && !!lateOrder.body?.reason,
+    'ตอบ code PREORDER_CUTOFF_PASSED ให้ LIFF แยกเคสจากนอกเขตได้',
+    JSON.stringify(lateOrder.body),
+  );
+  // เลยเวลาปิดรับแล้วยังสั่งรับวันนี้ได้ตามปกติ (ไม่ได้ปิดร้าน)
+  const stillToday = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'รับวันนี้', ...IN_ZONE },
+      paymentMethod: 'cod',
+    },
+  });
+  ok(is2xx(stillToday.status), 'ปิดรับล่วงหน้าแล้ว แต่สั่งรับวันนี้ยังได้', `ได้ ${stillToday.status}`);
+  ok(stillToday.body?.scheduledAt === null, 'ออเดอร์รับวันนี้ scheduledAt = null');
+
+  // คืนค่าเดิมไว้ ไม่ให้กระทบเทสต์/ข้อมูลอื่นที่รันต่อจากนี้
+  await req('PATCH', `/admin/preorder/settings?brandId=${brandId}`, {
+    token: adminToken, body: { cutoffTime: '20:00' },
+  });
+
+  // รอบส่งของครัวอื่น → 404 (ไม่บอกว่ามีอยู่จริง) — ครัวใหม่ provision รอบให้เองตอนสร้าง
+  const otherKitchen = await req('POST', '/admin/kitchens', {
+    token: adminToken,
+    body: { name: 'ครัว E2E-' + Date.now().toString(36), lat: 13.9, lng: 100.9, maxDistanceKm: 5, flatFee: 1000 },
+  });
+  ok(is2xx(otherKitchen.status), 'สร้างครัวใหม่ (provision รอบส่งเริ่มต้นให้ด้วย)');
+  const xBrand = await req('POST', '/admin/brands', {
+    token: adminToken,
+    body: { name: 'E2E Preorder X', slug: 'e2e-pre-' + Date.now().toString(36), kitchenIds: [otherKitchen.body.id] },
+  });
+  ok(is2xx(xBrand.status), 'สร้างแบรนด์ที่ผูกครัวใหม่');
+  const xSlots = await req('GET', `/delivery/slots/${xBrand.body.brand.id}`);
+  ok(
+    xSlots.status === 200 && xSlots.body?.slots?.length === 2,
+    'ครัวที่สร้างใหม่มีรอบส่งเริ่มต้น 2 รอบ',
+    JSON.stringify(xSlots.body?.slots?.map((s) => s.name)),
+  );
+  const foreignSlotId = xSlots.body.slots[0].id;
+  const crossSlot = await req('POST', '/orders', {
+    token: preTok, // ลูกค้าของแบรนด์เดิม (ครัวเดิม)
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'ข้ามครัว', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: foreignSlotId,
+    },
+  });
+  ok(crossSlot.status === 404, 'ใช้รอบส่งของครัวอื่น → 404 (ไม่รั่วว่ามีอยู่จริง)', `ได้ ${crossSlot.status}`);
+
+  // รอบที่ปิดใช้งานแล้วเลือกไม่ได้
+  const offSlot = await req('PATCH', `/admin/preorder/slots/${slotEve.id}?brandId=${brandId}`, {
+    token: adminToken, body: { isActive: false },
+  });
+  ok(is2xx(offSlot.status), 'ปิดใช้งานรอบส่งได้');
+  ok(
+    !(await req('GET', `/delivery/slots/${brandId}`)).body?.slots?.some((s) => s.id === slotEve.id),
+    'รอบที่ปิดใช้งานไม่โผล่ให้ลูกค้าเห็น',
+  );
+  const offOrder = await req('POST', '/orders', {
+    token: preTok,
+    body: {
+      idempotencyKey: uuid(),
+      items: [{ menuItemId: item.id, qty: 1 }],
+      deliveryAddress: { detail: 'รอบปิดอยู่', ...IN_ZONE },
+      paymentMethod: 'cod',
+      deliverySlotId: slotEve.id,
+    },
+  });
+  ok(offOrder.status === 404, 'สั่งรอบที่ปิดใช้งาน → 404', `ได้ ${offOrder.status}`);
+  await req('PATCH', `/admin/preorder/slots/${slotEve.id}?brandId=${brandId}`, {
+    token: adminToken, body: { isActive: true },
+  });
+
+  // validate ค่าที่เจ้าของกรอก
+  ok(
+    (await req('PATCH', `/admin/preorder/settings?brandId=${brandId}`, { token: adminToken, body: { cutoffTime: '25:99' } })).status === 400,
+    'เวลาปิดรับรูปแบบผิด → 400',
+  );
+  ok(
+    (await req('POST', `/admin/preorder/slots?brandId=${brandId}`, { token: adminToken, body: { name: 'ย้อนเวลา', startTime: '18:00', endTime: '11:00' } })).status === 400,
+    'รอบที่เวลาเริ่มหลังเวลาจบ → 400',
+  );
+  ok(
+    (await req('GET', `/admin/preorder/summary?date=2026-02-30`, { token: adminToken })).status === 400,
+    'ใบสรุปวันที่ไม่มีจริง → 400',
+  );
+
+  // แก้เวลารอบที่มีออเดอร์จองค้างอยู่ → 409 (ไม่งั้นออเดอร์หลุดใบสรุปเงียบ ๆ)
+  const editBooked = await req('PATCH', `/admin/preorder/slots/${preId}?brandId=${brandId}`, {
+    token: adminToken, body: { startTime: '09:00', endTime: '10:00' },
+  });
+  ok(
+    editBooked.status === 409,
+    'แก้เวลารอบที่มีออเดอร์จองอยู่ → 409 (กันออเดอร์หลุดใบสรุปยอดผลิต)',
+    `ได้ ${editBooked.status}`,
+  );
+  ok(
+    is2xx((await req('PATCH', `/admin/preorder/slots/${preId}?brandId=${brandId}`, { token: adminToken, body: { name: 'รอบเที่ยง' } })).status),
+    'เปลี่ยนชื่อรอบที่มีออเดอร์จองอยู่ได้ (ไม่กระทบการจัดกลุ่ม)',
+  );
+
+  // RBAC + tenant isolation
+  ok(
+    (await req('GET', `/admin/preorder/settings?brandId=${brandId}`, { token: kTok })).status === 403,
+    'kitchen แก้/ดูตั้งค่าสั่งล่วงหน้าไม่ได้ → 403 (owner/manager เท่านั้น)',
+  );
+  ok(
+    (await req('GET', '/admin/preorder/summary', { token: kTok })).status === 200,
+    'kitchen เปิดใบสรุปยอดผลิตได้ (เป็นใบที่ครัวใช้ทำงาน)',
+  );
+  ok(
+    [401, 403].includes((await req('GET', `/admin/preorder/settings?brandId=${brandId}`, { token: custToken })).status),
+    'customer JWT เข้าตั้งค่าสั่งล่วงหน้า → 401/403',
+  );
+  ok(
+    [401, 403].includes((await req('GET', '/admin/preorder/summary', { token: custToken })).status),
+    'customer JWT เข้าใบสรุปยอดผลิต → 401/403',
+  );
+  ok(
+    (await req('GET', `/admin/preorder/settings?brandId=${xBrand.body.brand.id}`, { token: adminToken })).status === 403,
+    'ตั้งค่าสั่งล่วงหน้าข้ามแบรนด์ที่ไม่มีสิทธิ์ → 403 (token เดิมยังไม่มีแบรนด์ใหม่)',
+  );
 
   // สรุป
   console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}E2E: ${pass} ผ่าน / ${fail} ล้มเหลว\x1b[0m`);

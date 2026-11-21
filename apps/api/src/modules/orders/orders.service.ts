@@ -14,6 +14,7 @@ import { canTransition } from './status';
 import { OrderEventsService } from './order-events.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { PreorderService } from '../preorder/preorder.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { canAddSavedAddress, normalizeLabel } from '../profile/address-book';
 
@@ -36,6 +37,7 @@ export class OrdersService {
     private readonly events: OrderEventsService,
     private readonly notify: NotificationsService,
     private readonly loyalty: LoyaltyService,
+    private readonly preorder: PreorderService,
   ) {}
 
   private readonly orderInclude = { items: true } satisfies Prisma.OrderInclude;
@@ -110,6 +112,7 @@ export class OrdersService {
    *  - idempotent ด้วย idempotencyKey (กันกดซ้ำ)
    *  - server re-check เขต/ค่าส่งเสมอ (ผลจาก LIFF เป็นแค่ UX) → 422 ถ้านอกเขต
    *  - คิดเงินฝั่ง server ล้วน (ราคาเมนู snapshot จาก DB ไม่เชื่อ client)
+   *  - US-22: เลือกรอบส่งล่วงหน้าได้ → เช็คเวลาปิดรับฝั่ง server → 422 PREORDER_CUTOFF_PASSED
    */
   async create(customer: { sub: string; brandId: string }, dto: CreateOrderDto) {
     const { brandId, sub: customerId } = customer;
@@ -132,13 +135,33 @@ export class OrdersService {
       }
     }
 
-    // 2) หาปลายทาง แล้ว server-side re-check เขต + ค่าส่ง (กติกาเหล็ก #5)
+    // 2) US-22: สั่งล่วงหน้า — เช็คเวลาปิดรับฝั่ง server เสมอ (ผลที่ LIFF คำนวณเป็นแค่ UX)
+    //    ทำก่อนเช็คเขต/คิดเงิน เพราะถ้าเลยเวลาปิดรับแล้วก็ไม่ต้องคิดอะไรต่อ
+    const preorder = dto.deliverySlotId
+      ? await this.preorder.resolveForOrder(brandId, dto.deliverySlotId)
+      : null;
+    if (preorder && !preorder.ok) {
+      if (preorder.code === 'SLOT_NOT_FOUND') {
+        // ไม่บอกว่ารอบนี้มีอยู่จริงแต่เป็นของครัวอื่น (pattern เดียวกับ US-50/US-58)
+        throw new NotFoundException('ไม่พบรอบส่งนี้');
+      }
+      throw new UnprocessableEntityException({
+        code: preorder.code,
+        reason: preorder.reason,
+        cutoffAt: preorder.cutoffAt,
+      });
+    }
+    const scheduledAt = preorder?.ok ? preorder.scheduledAt : null;
+
+    // 3) หาปลายทาง แล้ว server-side re-check เขต + ค่าส่ง (กติกาเหล็ก #5)
     //    หมุดจากสมุดก็ต้องเช็คซ้ำ — ครัวย้าย/รัศมีเปลี่ยนได้หลังบันทึกหมุดไว้
+    //    ออเดอร์ล่วงหน้าข้ามการเช็คเวลาทำการ แต่ยังเช็คเขต/ค่าส่ง/ปุ่มพักรับออเดอร์ครบ
     const target = await this.resolveDeliveryTarget(customerId, brandId, dto);
-    const quote = await this.delivery.quote(brandId, {
-      lat: target.lat,
-      lng: target.lng,
-    });
+    const quote = await this.delivery.quote(
+      brandId,
+      { lat: target.lat, lng: target.lng },
+      { scheduled: !!scheduledAt },
+    );
     if (!quote.inZone) {
       throw new UnprocessableEntityException({
         code: 'OUT_OF_ZONE',
@@ -148,7 +171,7 @@ export class OrdersService {
     }
     const deliveryFee = quote.deliveryFee ?? 0;
 
-    // 3) โหลดเมนูจาก DB (กรอง brandId + เปิดขาย) — ราคามาจาก server เท่านั้น
+    // 4) โหลดเมนูจาก DB (กรอง brandId + เปิดขาย) — ราคามาจาก server เท่านั้น
     const ids = [...new Set(dto.items.map((i) => i.menuItemId))];
     const menuItems = await this.prisma.menuItem.findMany({
       where: { brandId, id: { in: ids }, isAvailable: true },
@@ -173,7 +196,7 @@ export class OrdersService {
       };
     });
 
-    // 4) US-57: ใช้แต้มเป็นส่วนลด (ถ้าเลือกมา) — ตรวจก่อน ยังไม่ตัดแต้ม
+    // 5) US-57: ใช้แต้มเป็นส่วนลด (ถ้าเลือกมา) — ตรวจก่อน ยังไม่ตัดแต้ม
     const subtotalBefore = orderItems.reduce((a, i) => a + i.lineTotal, 0);
     const discountPlan = dto.loyaltyRewardId
       ? await this.loyalty.planRewardDiscount(
@@ -183,10 +206,10 @@ export class OrdersService {
         )
       : null;
 
-    // 5) คิดยอดฝั่ง server (ส่วนลดมาจาก server เท่านั้น ไม่เชื่อค่าจาก client)
+    // 6) คิดยอดฝั่ง server (ส่วนลดมาจาก server เท่านั้น ไม่เชื่อค่าจาก client)
     const pricing = computeOrderPricing(orderItems, deliveryFee, discountPlan?.discount ?? 0);
 
-    // 6) เขียน order + address + items แบบ atomic (nested create). กัน race ที่ idempotencyKey ด้วย unique
+    // 7) เขียน order + address + items แบบ atomic (nested create). กัน race ที่ idempotencyKey ด้วย unique
     //    ถ้าใช้แต้มเป็นส่วนลด ต้องตัดแต้มใน transaction เดียวกัน — ออเดอร์สำเร็จแต่แต้มไม่ถูกตัด (หรือกลับกัน) ไม่ได้
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -203,6 +226,7 @@ export class OrdersService {
           discount: pricing.discount,
           total: pricing.total,
           note: dto.note,
+          scheduledAt, // US-22: เวลาเริ่มรอบส่งที่เลือก (null = รับวันนี้ตามปกติ)
           idempotencyKey: dto.idempotencyKey,
           // US-58: ออเดอร์ชี้ snapshot เสมอ (isSaved=false) ไม่ชี้หมุดในสมุด
           //         → ลูกค้าแก้/ลบหมุดทีหลัง ที่อยู่บนออเดอร์เก่าและใบไรเดอร์ไม่เปลี่ยน

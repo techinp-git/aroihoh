@@ -15,6 +15,10 @@ export class DeliveryController {
   // US-03: LIFF เรียกเช็คเขตก่อนยืนยัน (server re-check อีกครั้งตอนสร้างออเดอร์ — US-04)
   @Post('check')
   check(@Body() dto: CheckDeliveryDto) {
-    return this.delivery.check(dto.brandId, { lat: dto.lat, lng: dto.lng });
+    return this.delivery.check(
+      dto.brandId,
+      { lat: dto.lat, lng: dto.lng },
+      { scheduled: dto.scheduled },
+    );
   }
 }

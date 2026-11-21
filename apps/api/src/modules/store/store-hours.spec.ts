@@ -1,4 +1,4 @@
-import { withinHours, isAccepting } from './store-hours';
+import { withinHours, isAccepting, isAcceptingPreorder } from './store-hours';
 
 describe('withinHours', () => {
   it('ไม่ตั้งเวลา = เปิดตลอด', () => {
@@ -24,5 +24,20 @@ describe('isAccepting', () => {
     const r = isAccepting({ isOpen: true, openTime: '10:00', closeTime: '21:00' }, '22:00');
     expect(r.ok).toBe(false);
     expect(r.reason).toContain('นอกเวลา');
+  });
+});
+
+describe('isAcceptingPreorder (US-22)', () => {
+  it('นอกเวลาทำการแต่ยังรับออเดอร์ล่วงหน้าได้ — รอบส่งเป็นของพรุ่งนี้', () => {
+    // 21:00 ครัวปิดแล้ว (10:00–18:00) แต่ยังไม่ถึงเวลาปิดรับ 20:00... ของ "วันนี้"
+    // จุดสำคัญ: ตัวนี้ไม่ตัดสินด้วยเวลาทำการเลย
+    expect(isAccepting({ isOpen: true, openTime: '10:00', closeTime: '18:00' }, '21:00').ok).toBe(false);
+    expect(isAcceptingPreorder({ isOpen: true }).ok).toBe(true);
+  });
+
+  it('พักรับออเดอร์ (isOpen=false) → ล่วงหน้าก็สั่งไม่ได้', () => {
+    const r = isAcceptingPreorder({ isOpen: false });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain('พัก');
   });
 });

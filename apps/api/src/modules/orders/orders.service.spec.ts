@@ -16,6 +16,7 @@ function makeService(overrides: {
   createImpl?: any;
   savedAddress?: any; // US-58: หมุดในสมุดที่ findFirst จะคืน (null = ไม่ใช่ของลูกค้ารายนี้)
   savedAddressCount?: number;
+  preorder?: any; // US-22: ผลการตัดสินรอบส่งล่วงหน้าที่ PreorderService จะคืน
 }) {
   const prisma: any = {
     order: {
@@ -60,12 +61,23 @@ function makeService(overrides: {
     planRewardDiscount: jest.fn(),
     consumeRewardForOrder: jest.fn(),
   };
+  // US-22: สั่งล่วงหน้า — ค่าเริ่มต้นคือ "ไม่ส่ง deliverySlotId" จึงไม่ถูกเรียก
+  const preorder: any = {
+    resolveForOrder: jest.fn().mockResolvedValue(
+      overrides.preorder ?? {
+        ok: true,
+        scheduledAt: new Date('2026-11-22T04:00:00.000Z'),
+        slot: { id: 'noon', name: 'รอบเที่ยง' },
+      },
+    ),
+  };
   return {
-    service: new OrdersService(prisma, delivery, events, notify, loyalty),
+    service: new OrdersService(prisma, delivery, events, notify, loyalty, preorder),
     prisma,
     delivery,
     notify,
     loyalty,
+    preorder,
   };
 }
 
@@ -159,7 +171,7 @@ describe('OrdersService.create — ที่อยู่ปลายทาง (U
     });
     await service.create(customer, savedDto);
 
-    expect(delivery.quote).toHaveBeenCalledWith('brand-1', { lat: 13.75, lng: 100.56 });
+    expect(delivery.quote).toHaveBeenCalledWith('brand-1', { lat: 13.75, lng: 100.56 }, { scheduled: false });
     // where ต้องผูกทั้ง customerId และ brandId (กันหยิบหมุดข้ามคน/ข้ามแบรนด์)
     const where = prisma.address.findFirst.mock.calls[0][0].where;
     expect(where).toMatchObject({
@@ -234,5 +246,73 @@ describe('OrdersService.create — ที่อยู่ปลายทาง (U
     });
     await service.create(customer, { ...savedDto, saveAddress: true } as any);
     expect(prisma.address.create).not.toHaveBeenCalled();
+  });
+
+  // ── US-22: สั่งล่วงหน้า D-1 ──
+  it('ไม่ส่ง deliverySlotId → ไม่แตะ preorder และ scheduledAt เป็น null (สั่งรับวันนี้)', async () => {
+    let captured: any;
+    const { service, preorder, delivery } = makeService({
+      menuItems: menu,
+      createdCapture: (d) => (captured = d),
+    });
+    await service.create(customer, { ...baseDto, idempotencyKey: 'key-now' } as any);
+    expect(preorder.resolveForOrder).not.toHaveBeenCalled();
+    expect(captured.scheduledAt).toBeNull();
+    // เช็คเขตแบบปกติ = ต้องอยู่ในเวลาทำการ
+    expect(delivery.quote).toHaveBeenCalledWith('brand-1', expect.anything(), { scheduled: false });
+  });
+
+  it('เลือกรอบส่ง → เก็บ scheduledAt = เวลาเริ่มรอบ และเช็คเขตแบบข้ามเวลาทำการ', async () => {
+    let captured: any;
+    const { service, preorder, delivery } = makeService({
+      menuItems: menu,
+      createdCapture: (d) => (captured = d),
+    });
+    await service.create(customer, {
+      ...baseDto,
+      idempotencyKey: 'key-pre',
+      deliverySlotId: 'noon',
+    } as any);
+    expect(preorder.resolveForOrder).toHaveBeenCalledWith('brand-1', 'noon');
+    expect(captured.scheduledAt?.toISOString()).toBe('2026-11-22T04:00:00.000Z');
+    expect(delivery.quote).toHaveBeenCalledWith('brand-1', expect.anything(), { scheduled: true });
+  });
+
+  it('เลยเวลาปิดรับ → 422 พร้อม code ให้ LIFF แยกเคส และไม่สร้างออเดอร์', async () => {
+    const { service, prisma } = makeService({
+      menuItems: menu,
+      preorder: {
+        ok: false,
+        code: 'PREORDER_CUTOFF_PASSED',
+        reason: 'ปิดรับออเดอร์ของรอบเที่ยงพรุ่งนี้แล้ว (ปิดรับ 20:00)',
+        cutoffAt: '2026-11-21T13:00:00.000Z',
+      },
+    });
+    await expect(
+      service.create(customer, { ...baseDto, idempotencyKey: 'key-late', deliverySlotId: 'noon' } as any),
+    ).rejects.toThrow(UnprocessableEntityException);
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('รอบส่งของครัวอื่น/ปิดใช้งาน → 404 (ไม่บอกว่ามีอยู่จริง)', async () => {
+    const { service, prisma } = makeService({
+      menuItems: menu,
+      preorder: { ok: false, code: 'SLOT_NOT_FOUND', reason: 'ไม่พบรอบส่งนี้' },
+    });
+    await expect(
+      service.create(customer, { ...baseDto, idempotencyKey: 'key-slot', deliverySlotId: 'x' } as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('ออเดอร์ล่วงหน้านอกเขต → ยัง 422 OUT_OF_ZONE (เช็คเขตไม่ถูกข้าม)', async () => {
+    const { service, prisma } = makeService({
+      menuItems: menu,
+      quote: { kitchenId: 'k1', inZone: false, distanceKm: 12, reason: 'เกินระยะจัดส่ง' },
+    });
+    await expect(
+      service.create(customer, { ...baseDto, idempotencyKey: 'key-pre-out', deliverySlotId: 'noon' } as any),
+    ).rejects.toThrow(UnprocessableEntityException);
+    expect(prisma.order.create).not.toHaveBeenCalled();
   });
 });

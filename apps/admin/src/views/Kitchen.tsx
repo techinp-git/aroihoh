@@ -9,6 +9,7 @@ import {
   type KitchenOrder,
 } from '../api';
 import BrandChip from '../components/BrandChip';
+import PreorderPanel from './kitchen/PreorderPanel';
 import { printHtml, kitchenTicketHtml, riderLabelHtml } from '../lib/print';
 import { beep } from '../lib/beep';
 
@@ -17,6 +18,19 @@ const since = (iso: string) => {
   if (m < 1) return 'เพิ่งเข้า';
   if (m < 60) return `${m} นาที`;
   return `${Math.floor(m / 60)} ชม. ${m % 60} น.`;
+};
+
+/** US-22: รอบส่งที่จองไว้ — โชว์บนการ์ดเพื่อไม่ให้ครัวทำออเดอร์ของพรุ่งนี้ก่อนเวลา */
+const slotLabel = (iso: string) => {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString('th-TH', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok',
+  });
+  const todayTH = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const dayTH = new Date(at.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  if (dayTH === todayTH) return `วันนี้ ${time}`;
+  const d = at.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' });
+  return `${d} ${time}`;
 };
 
 // ปุ่มดันสถานะถัดไป (label ตามมุมครัว) · US-42/43 จะ hook พิมพ์ที่ transition นี้
@@ -102,6 +116,9 @@ export default function Kitchen() {
 
   return (
     <>
+      {/* US-22: ยอดผลิตของรอบส่งล่วงหน้า — ครัวต้องเห็นก่อนคิวสด ไม่งั้นผลิตไม่ทันรอบ */}
+      <PreorderPanel />
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
         <span className={`pill ${live ? 'on' : 'off'}`}>{live ? '🟢 realtime' : '⚪ offline'}</span>
         <span style={{ color: '#888', fontSize: 13 }}>{orders.length} ออเดอร์ในคิว</span>
@@ -137,6 +154,12 @@ export default function Kitchen() {
                 <b style={{ fontSize: 15 }}>#{o.id.slice(0, 6)}</b>
                 <span className={`pill ${o.status}`} style={{ fontSize: 11 }}>{STATUS_TH[o.status] || o.status}</span>
               </div>
+              {/* จองรอบไว้ = ยังไม่ต้องทำเดี๋ยวนี้ (กฎ 2 ชม.: ทำใกล้เวลาส่ง) */}
+              {o.scheduledAt && (
+                <div style={{ fontSize: 12, color: '#1d6fa5', background: '#eef6fb', padding: '3px 8px', borderRadius: 6 }}>
+                  🗓️ รอบส่ง {slotLabel(o.scheduledAt)}
+                </div>
+              )}
               <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
                 {o.items.map((it) => (
                   <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 2 }}>

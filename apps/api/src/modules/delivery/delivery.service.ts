@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { haversineKm, isWithinRadius } from './geo';
 import { computeDeliveryFee } from './fee';
-import { isAccepting, nowHHMMBangkok } from '../store/store-hours';
+import { isAccepting, isAcceptingPreorder, nowHHMMBangkok } from '../store/store-hours';
 import type { DeliveryCheckResult } from '@aroihoh/shared';
 
 /** เหตุที่สั่งไม่ได้ — แยกเป็นรหัสเพื่อให้ caller ตัดสินใจต่างกันได้ ไม่ต้องอ่านข้อความไทย */
@@ -11,6 +11,11 @@ export type DeliveryRejectCode =
   | 'out_of_radius' // ไกลเกินรัศมีครัว — ที่อยู่นี้สั่งไม่ได้จริง ๆ
   | 'no_fee_rule' // ไม่มีกฎค่าส่งครอบระยะนี้ (ตั้งค่าไม่ครบ)
   | 'polygon_unsupported';
+
+/** US-22: ออเดอร์ล่วงหน้าไม่ต้องอยู่ในเวลาทำการ (รอบส่งเป็นของวันพรุ่งนี้) */
+export interface QuoteOptions {
+  scheduled?: boolean;
+}
 
 export interface DeliveryQuote {
   kitchenId: string;
@@ -56,6 +61,7 @@ export class DeliveryService {
   async quote(
     brandId: string,
     point: { lat: number; lng: number },
+    opts: QuoteOptions = {},
   ): Promise<DeliveryQuote> {
     const kitchen = await this.resolveKitchen(brandId);
 
@@ -69,10 +75,14 @@ export class DeliveryService {
     const maxKm = kitchen.maxDistanceKm ?? 0;
 
     // US-16: พักรับออเดอร์ / นอกเวลาทำการ
-    const acc = isAccepting(
-      { isOpen: kitchen.isOpen, openTime: kitchen.openTime, closeTime: kitchen.closeTime },
-      nowHHMMBangkok(),
-    );
+    // US-22: ออเดอร์ล่วงหน้าข้ามการเช็คเวลาทำการ (รอบส่งคือพรุ่งนี้) แต่ยังเคารพปุ่มพักรับออเดอร์
+    //        — เวลาปิดรับของออเดอร์ล่วงหน้าถูกเช็คแยกที่ PreorderService
+    const acc = opts.scheduled
+      ? isAcceptingPreorder({ isOpen: kitchen.isOpen })
+      : isAccepting(
+          { isOpen: kitchen.isOpen, openTime: kitchen.openTime, closeTime: kitchen.closeTime },
+          nowHHMMBangkok(),
+        );
     if (!acc.ok) {
       return {
         kitchenId: kitchen.id,
@@ -122,12 +132,17 @@ export class DeliveryService {
     };
   }
 
-  /** US-03: LIFF เรียกเช็คเขตก่อนยืนยัน (ผล check เป็นแค่ UX — server re-check ตอนสร้างออเดอร์อีกที) */
+  /**
+   * US-03: LIFF เรียกเช็คเขตก่อนยืนยัน (ผล check เป็นแค่ UX — server re-check ตอนสร้างออเดอร์อีกที)
+   * US-22: ส่ง scheduled=true มาด้วยเมื่อลูกค้าเลือกรอบพรุ่งนี้ ไม่งั้นตอนหัวค่ำหน้าเช็คเอาต์จะขึ้น
+   *        "นอกเวลาทำการ" ทั้งที่กดสั่งได้จริง — preview ต้องตรงกับที่ server จะตัดสินตอนสร้างออเดอร์
+   */
   async check(
     brandId: string,
     point: { lat: number; lng: number },
+    opts: QuoteOptions = {},
   ): Promise<DeliveryCheckResult> {
-    const q = await this.quote(brandId, point);
+    const q = await this.quote(brandId, point, opts);
     return {
       inZone: q.inZone,
       distanceKm: q.distanceKm,

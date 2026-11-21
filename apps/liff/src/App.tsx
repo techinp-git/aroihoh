@@ -20,6 +20,7 @@ import {
   createRedemption,
   getRewards,
   getDeliveryOrigin,
+  getDeliverySlots,
   checkDelivery,
   createOrder,
   getOrder,
@@ -30,6 +31,7 @@ import {
   type OrderResult,
   type BrandInfo,
   type DeliveryOrigin,
+  type DeliverySlots,
   type Profile,
   type SavedAddress,
   type LoyaltyMe,
@@ -43,6 +45,7 @@ import {
   type StaffSession,
 } from './staff';
 import AddressPicker from './AddressPicker';
+import SlotPicker from './SlotPicker';
 import ProfileTab, { addressIcon } from './ProfileTab';
 import PointsTab, { EarnResultView, type EarnOutcome } from './PointsTab';
 import Coupon from './Coupon';
@@ -64,6 +67,30 @@ const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined;
 const PRIVACY_URL = (import.meta.env.VITE_PRIVACY_URL as string | undefined) || '';
 
 interface CartLine { item: MenuItem; qty: number; }
+
+/** US-22: ป้ายรอบส่งที่เลือก เช่น "พรุ่งนี้ 11:00–12:30" */
+function slotLabel(data: DeliverySlots, slotId: string): string {
+  const s = data.slots.find((x) => x.id === slotId);
+  if (!s) return '—';
+  const day = new Date(`${s.serviceDate}T00:00:00+07:00`).toLocaleDateString('th-TH', {
+    day: 'numeric',
+    month: 'short',
+  });
+  return `${day} ${s.startTime}–${s.endTime}`;
+}
+
+/** US-22: รอบส่งของออเดอร์ที่สั่งแล้ว — อ่านจาก scheduledAt ที่ server เก็บไว้ */
+function scheduledLabel(iso: string): string {
+  const at = new Date(iso);
+  return at.toLocaleString('th-TH', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Bangkok',
+  });
+}
 
 /**
  * US-52: ยิงรับแต้มจากโค้ดที่สแกนมา แล้วแปลงผลเป็นข้อความที่ลูกค้าอ่านแล้วรู้ว่าต้องทำอะไรต่อ
@@ -139,6 +166,9 @@ export default function App() {
   const [discountRewards, setDiscountRewards] = useState<Reward[]>([]);
   const [usedReward, setUsedReward] = useState<Reward | null>(null);
   const [origin, setOrigin] = useState<DeliveryOrigin | null>(null);
+  // US-22: รอบส่งล่วงหน้า (slotId = null → รับวันนี้ตามปกติ)
+  const [slots, setSlots] = useState<DeliverySlots | null>(null);
+  const [slotId, setSlotId] = useState<string | null>(null);
   const [zone, setZone] = useState<DeliveryCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -282,6 +312,15 @@ export default function App() {
     if (preferred) pickSaved(preferred);
   }, [view, savedAddrs.length]);
 
+  // US-22: โหลดรอบส่งพรุ่งนี้ตอนเข้าหน้าเช็คเอาต์ (โหลดใหม่ทุกครั้ง — เวลาปิดรับเดินอยู่)
+  // ร้านไม่เปิดสั่งล่วงหน้า/โหลดไม่ได้ = ไม่โชว์ตัวเลือก ยังสั่งรับวันนี้ได้เหมือนเดิม
+  useEffect(() => {
+    if (view !== 'checkout' || tab !== 'order') return;
+    getDeliverySlots()
+      .then(setSlots)
+      .catch(() => setSlots(null));
+  }, [view, tab]);
+
   // US-57: โหลดรางวัลชนิดส่วนลดที่แต้มถึงแล้ว เมื่อเข้าหน้าเช็คเอาต์
   useEffect(() => {
     if (view !== 'checkout' || tab !== 'order' || !profile?.loyalty) return;
@@ -292,18 +331,20 @@ export default function App() {
 
   // ขยับหมุดแล้วเช็คระยะ/ค่าส่งให้อัตโนมัติ — หน่วงไว้ ไม่ให้ยิงทุกพิกเซลตอนลาก
   // ผลที่ได้เป็นแค่ UX ตอนยืนยันออเดอร์ server เช็คซ้ำเองเสมอ (#5)
+  // US-22: ส่ง scheduled ไปด้วย — ออเดอร์ล่วงหน้าไม่ต้องอยู่ในเวลาทำการ
+  //         ถ้าไม่ส่ง ตอนหัวค่ำจะขึ้น "นอกเวลาทำการ" ทั้งที่กดสั่งรอบพรุ่งนี้ได้จริง
   useEffect(() => {
     if (view !== 'checkout' || tab !== 'order') return;
     setZone(null);
     setChecking(true);
     const t = setTimeout(() => {
-      checkDelivery(addr.lat, addr.lng)
+      checkDelivery(addr.lat, addr.lng, slotId !== null)
         .then(setZone)
         .catch((e) => setError((e as Error).message))
         .finally(() => setChecking(false));
     }, 500);
     return () => clearTimeout(t);
-  }, [tab, view, addr.lat, addr.lng]);
+  }, [tab, view, addr.lat, addr.lng, slotId]);
 
   function pickSaved(a: SavedAddress) {
     setPickedId(a.id);
@@ -333,6 +374,7 @@ export default function App() {
         paymentMethod: 'cod' as const,
         note: note || undefined,
         ...(usedReward ? { loyaltyRewardId: usedReward.id } : {}),
+        ...(slotId ? { deliverySlotId: slotId } : {}),
       };
       const body: CreateOrderBody = pickedId
         ? { ...base, savedAddressId: pickedId }
@@ -354,6 +396,7 @@ export default function App() {
       // ล้างตะกร้า/หมายเหตุ ไม่งั้นกลับไปหน้าเมนูแล้วเจอของเดิมค้างอยู่ กดสั่งซ้ำโดยไม่ตั้งใจ
       setCart({});
       setNote('');
+      setSlotId(null); // ครั้งหน้าเริ่มที่ "เร็วที่สุดวันนี้" ไม่ค้างรอบของออเดอร์ที่สั่งไปแล้ว
       // เพิ่งบันทึกหมุดใหม่เข้าสมุด → ดึงโปรไฟล์ใหม่ให้ลิสต์ตรง
       if (!pickedId && saveAddr) getProfile().then(setProfile).catch(() => {});
       setSaveAddr(false);
@@ -364,6 +407,9 @@ export default function App() {
       }
     } catch (e) {
       setError((e as Error).message);
+      // เลยเวลาปิดรับระหว่างที่ค้างหน้านี้ไว้ → ดึงรอบใหม่ให้ชิปปิดตัวเอง
+      // ไม่งั้นลูกค้ากดยืนยันซ้ำแล้วเจอข้อความเดิมวนไป ไม่รู้ว่าต้องเปลี่ยนไปสั่งรับวันนี้
+      if (slotId) getDeliverySlots().then(setSlots).catch(() => {});
     } finally {
       setPlacing(false);
     }
@@ -559,6 +605,11 @@ export default function App() {
         {/* CHECKOUT */}
         {!earnOutcome && inOrderTab && view === 'checkout' && (
           <>
+            {/* US-22: เลือกเวลาจัดส่งก่อนที่อยู่ — รอบที่เลือกมีผลกับการเช็คเขต (เวลาทำการ) */}
+            {slots && (
+              <SlotPicker data={slots} value={slotId} onChange={setSlotId} />
+            )}
+
             <div className="card">
               <h3>ที่อยู่จัดส่ง</h3>
 
@@ -682,6 +733,13 @@ export default function App() {
                 )}
                 <div className="line"><span>ค่าส่ง</span><span>{baht(zone.deliveryFee ?? 0)}</span></div>
                 <div className="line total"><span>รวมทั้งหมด</span><span>{baht(checkoutTotal)}</span></div>
+                {/* ย้ำรอบที่เลือกในใบสรุป — ลูกค้าเห็นก่อนกดยืนยันว่าของไม่ได้มาวันนี้ */}
+                {slotId && slots && (
+                  <div className="line">
+                    <span>รอบจัดส่ง</span>
+                    <span>{slotLabel(slots, slotId)}</span>
+                  </div>
+                )}
                 <div className="line"><span>ชำระเงิน</span><span>เก็บเงินปลายทาง (COD)</span></div>
               </div>
             )}
@@ -696,6 +754,12 @@ export default function App() {
               <h2>สั่งซื้อสำเร็จ!</h2>
               <div className="oid">เลขออเดอร์ #{order.id.slice(0, 8)}</div>
             </div>
+            {/* US-22: สั่งล่วงหน้าแล้วต้องบอกให้ชัดว่าของมาเมื่อไร ไม่ใช่ปล่อยให้นั่งรอวันนี้ */}
+            {order.scheduledAt && (
+              <div className="slot-banner">
+                🗓️ ออเดอร์ล่วงหน้า — ของจะถึง <b>{scheduledLabel(order.scheduledAt)}</b>
+              </div>
+            )}
             <div className="card">
               {order.discount > 0 && (
                 <div className="line" style={{ color: 'var(--green)' }}>
@@ -712,6 +776,12 @@ export default function App() {
         {!earnOutcome && inOrderTab && view === 'track' && order && (
           <div className="card">
             <h3>สถานะออเดอร์ #{order.id.slice(0, 8)}</h3>
+            {/* ออเดอร์ล่วงหน้าค้างที่ "รอยืนยัน" ได้เป็นชั่วโมง — ต้องบอกว่าปกติ ไม่ใช่ร้านลืม */}
+            {order.scheduledAt && order.status !== 'cancelled' && (
+              <div className="slot-banner">
+                🗓️ รอบส่ง <b>{scheduledLabel(order.scheduledAt)}</b> — ร้านจะเริ่มทำใกล้เวลาส่ง
+              </div>
+            )}
             {order.status === 'cancelled' ? (
               <div className="zone-bad">ออเดอร์ถูกยกเลิก{order.cancelReason ? ` — ${order.cancelReason}` : ''}</div>
             ) : (
