@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DEFAULT_SLOTS } from '../preorder/preorder';
 
 interface KitchenInput {
   name?: string;
@@ -45,6 +46,9 @@ export class KitchensService {
         zoneType: 'radius',
         maxDistanceKm: dto.maxDistanceKm ?? 5,
         feeRules: { create: { type: 'flat', params: { fee: dto.flatFee ?? 0 }, isActive: true } },
+        // US-22: provision รอบส่งเริ่มต้นให้ด้วย (เหมือน flat fee rule) — ไม่งั้นครัวใหม่
+        // สั่งล่วงหน้าไม่ได้เลยจนเจ้าของไปตั้งรอบเอง · preorderCutoff มี default ที่คอลัมน์
+        deliverySlots: { create: DEFAULT_SLOTS.map((s) => ({ ...s, merchantId })) },
       },
       select: { id: true, name: true },
     });

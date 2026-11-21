@@ -1,4 +1,4 @@
-import type { KitchenOrder } from '../api';
+import type { KitchenOrder, ProductionSummary } from '../api';
 
 // พิมพ์ผ่าน hidden iframe — แยก style จากแอป, ไม่ต้องขอ popup
 // เครื่องพิมพ์ความร้อน 80mm: เปิด Chrome ที่ครัวด้วย --kiosk-printing เพื่อพิมพ์เงียบ (ดู docs/kitchen-print.md)
@@ -44,6 +44,7 @@ const doc = (title: string, body: string) => `<!doctype html><html><head><meta c
   .muted { font-size: 12px; }
   .note { font-size: 14px; font-weight: 700; border: 1px solid #000; padding: 3px 5px; margin-top: 4px; }
   .tag { font-size: 13px; font-weight: 700; }
+  .drop { border-bottom: 1px dotted #999; padding: 3px 0; }
 </style><title>${title}</title></head><body>${body}</body></html>`;
 
 // US-42: ใบครัว — พิมพ์ตอนกด "รับออเดอร์" · เน้นเมนู/จำนวน/หมายเหตุ ตัวใหญ่
@@ -85,6 +86,70 @@ export function riderLabelHtml(o: KitchenOrder) {
   `);
 }
 
+
+// ── US-22: ใบสรุปยอดผลิตของรอบส่งล่วงหน้า (80mm เหมือนใบครัว) ──
+// ครัวใช้ใบนี้ "ก่อน" เริ่มทำ: ผลิตตามยอดที่ปิดแล้ว แล้วแบ่งรอบผลิตให้ใกล้เวลาส่ง
+// (อาหารปรุงสำเร็จอยู่อุณหภูมิห้องได้ไม่เกิน 2 ชม.)
+const dayTH = (key: string) =>
+  new Date(`${key}T00:00:00+07:00`).toLocaleDateString('th-TH', {
+    weekday: 'short', day: 'numeric', month: 'short',
+  });
+
+export function productionSheetHtml(
+  s: ProductionSummary,
+  opts: { slotId?: string | null } = {},
+) {
+  const groups =
+    opts.slotId !== undefined && opts.slotId !== null
+      ? s.groups.filter((g) => g.slotId === opts.slotId)
+      : s.groups;
+
+  const sections = groups
+    .map((g) => {
+      const items = g.menuTotals.length
+        ? g.menuTotals
+            .map(
+              (m) =>
+                `<div class="item"><span>×${m.qty}</span>&nbsp; ${esc(m.name)}` +
+                `<div class="muted">${esc(m.brandName)}</div></div>`,
+            )
+            .join('')
+        : '<div class="muted">— ยังไม่มีออเดอร์ในรอบนี้ —</div>';
+      // จุดส่ง + กี่กล่องต่อจุด = ตัวเลขที่ใช้วางแผนรอบรถ
+      const drops = g.drops
+        .map(
+          (d) =>
+            `<div class="drop"><div class="row"><b>${d.boxes} กล่อง</b>` +
+            `<span class="muted">${d.orderCount} ออเดอร์${d.codTotal > 0 ? ` · เก็บ ${thb(d.codTotal)}฿` : ''}</span></div>` +
+            `<div class="muted">${esc(d.detail)}</div></div>`,
+        )
+        .join('');
+      return `
+        <div class="hr"></div>
+        <div class="c big">${esc(g.name)}${g.startTime ? ` ${g.startTime}–${g.endTime}` : ''}</div>
+        <div class="c muted">${g.boxCount} กล่อง · ${g.dropCount} จุดส่ง · ${g.orderCount} ออเดอร์</div>
+        <div class="hr"></div>
+        <div class="c tag">ยอดผลิต</div>
+        ${items}
+        ${drops ? `<div class="hr"></div><div class="c tag">จุดส่ง (เรียงกล่องมากสุด)</div>${drops}` : ''}`;
+    })
+    .join('');
+
+  return doc('ใบสรุปยอดผลิต', `
+    <div class="c tag">*** ใบสรุปยอดผลิต (สั่งล่วงหน้า) ***</div>
+    <div class="c xl">${dayTH(s.date)}</div>
+    <div class="c muted">
+      ${s.final
+        ? `ปิดรับแล้ว (${s.cutoffTime}) — ยอดนิ่ง`
+        : `⚠️ ยังไม่ปิดรับ (ปิด ${s.cutoffTime ?? '-'}) — ยอดอาจเปลี่ยน`}
+    </div>
+    <div class="c muted">พิมพ์ ${timeTH(new Date().toISOString())}</div>
+    ${sections}
+    <div class="hr"></div>
+    <div class="row"><span class="big">รวมทั้งวัน</span><span class="big">${s.totals.boxCount} กล่อง</span></div>
+    <div class="row muted"><span>จุดส่ง ${s.totals.dropCount} จุด</span><span>${s.totals.orderCount} ออเดอร์</span></div>
+  `);
+}
 
 // ── US-51: แผ่นสติกเกอร์ QR สะสมแต้ม (ติดใต้ฝากล่อง) ──
 // A4 กริด 5×7 = 35 ดวง/แผ่น ดวงละ 40×40mm ตรงกับสติกเกอร์ที่หาซื้อได้ทั่วไป

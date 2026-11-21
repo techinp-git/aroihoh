@@ -11,6 +11,15 @@ const prisma = new PrismaClient();
 // พิกัดครัวสมมติแถวอโศก
 const KITCHEN = { lat: 13.7376, lng: 100.5602 };
 
+// US-22: รอบส่งเริ่มต้น — เขียนซ้ำไว้ที่นี่โดยตั้งใจ ห้าม import จาก src/
+// (image ของ prod copy มาแค่ dist — สคริปต์ใน prisma/ ที่ import จาก src/ จะพังตอนรันจริง
+//  เจอมาแล้วกับ retention.cli และ rotate-encryption-key) · ตัวจริงอยู่ที่
+//  src/modules/preorder/preorder.ts → DEFAULT_SLOTS และ migration 0023
+const DEFAULT_SLOTS = [
+  { name: 'รอบเที่ยง', startTime: '11:00', endTime: '12:30', sortOrder: 1 },
+  { name: 'รอบเย็น', startTime: '17:00', endTime: '18:30', sortOrder: 2 },
+];
+
 async function main() {
   const merchant = await prisma.merchant.upsert({
     where: { slug: 'chimchiva' },
@@ -67,6 +76,15 @@ async function main() {
           ],
         },
       },
+    });
+  }
+
+  // US-22: รอบส่งล่วงหน้า D-1 (เที่ยง/เย็น) — เวลาปิดรับอยู่ที่ kitchens.preorderCutoff
+  // migration 0023 เติมให้ครัวที่มีอยู่แล้ว · ตรงนี้ไว้สำหรับ DB ที่ seed ขึ้นมาใหม่
+  const hasSlots = await prisma.deliverySlot.findFirst({ where: { kitchenId: kitchen.id } });
+  if (!hasSlots) {
+    await prisma.deliverySlot.createMany({
+      data: DEFAULT_SLOTS.map((s) => ({ ...s, kitchenId: kitchen!.id, merchantId: merchant.id })),
     });
   }
 

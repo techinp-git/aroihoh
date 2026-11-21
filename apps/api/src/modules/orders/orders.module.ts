@@ -9,12 +9,14 @@ import { DeliveryModule } from '../delivery/delivery.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { PreorderModule } from '../preorder/preorder.module';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Module({
   // DeliveryService (quote) + JwtModule (guard) + NotificationsService (US-08/09 แจ้งลูกค้า)
   // + LoyaltyModule: ให้แต้มตอนส่งสำเร็จ (US-56) + ใช้แต้มเป็นส่วนลด (US-57)
-  imports: [DeliveryModule, AuthModule, NotificationsModule, LoyaltyModule],
+  // + PreorderModule: เช็คเวลาปิดรับ/รอบส่งของออเดอร์ล่วงหน้า (US-22)
+  imports: [DeliveryModule, AuthModule, NotificationsModule, LoyaltyModule, PreorderModule],
   controllers: [OrdersController, AdminOrdersController, OrderStreamController, KitchenController],
   providers: [OrdersService, OrderEventsService, JwtAuthGuard],
 })

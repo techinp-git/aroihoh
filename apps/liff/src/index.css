@@ -206,3 +206,13 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .scan-manual input { flex: 1 1 auto; width: auto; min-width: 0; text-transform: uppercase; }
 .scan-manual .btn { flex: 0 0 auto; width: auto; padding: 10px 16px; font-size: 13px; }
 .staff-unlink { display: block; margin: 18px auto 0; font-size: 12px; }
+
+/* ── US-22: สั่งล่วงหน้า D-1 (เลือกรอบส่ง) ── */
+/* หัวข้อวันของรอบ + เวลาที่เหลือก่อนปิดรับ — ลูกค้าต้องเห็นว่าเหลือเวลาเท่าไร */
+.slot-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  flex-wrap: wrap; margin: 12px 0 8px; font-size: 13px; }
+.slot-left { color: var(--accent); font-weight: 600; font-size: 12px; }
+.slot-closed { color: var(--muted); font-weight: 600; font-size: 12px; }
+/* ป้ายบอกรอบส่งบนหน้า "สั่งสำเร็จ"/ติดตาม — ของไม่ได้มาวันนี้ ต้องเด่นกว่าข้อความธรรมดา */
+.slot-banner { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+  padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; }

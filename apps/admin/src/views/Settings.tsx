@@ -18,6 +18,7 @@ import {
 } from '../api';
 import BrandManager from './settings/BrandManager';
 import KitchenManager from './settings/KitchenManager';
+import PreorderCard from './settings/PreorderCard';
 
 // การ์ดตั้งค่า LINE OA (SETUP-1) — owner เท่านั้น · secret/token ไม่ถูกส่งกลับมาแสดง
 function LineSetupCard({ brandId }: { brandId: string }) {
@@ -231,6 +232,9 @@ export default function Settings({
           </div>
         </div>
       )}
+
+      {/* US-22: สั่งล่วงหน้า D-1 (เวลาปิดรับ + รอบส่ง) */}
+      {canManage && brandId && <PreorderCard brandId={brandId} />}
 
       {/* COD (US-07) */}
       {canManage && brand && (

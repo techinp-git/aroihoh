@@ -63,13 +63,24 @@ export async function adminFetch<T = unknown>(
       onSessionExpired();
       throw new Error('เซสชันหมดอายุ — กำลังพาไปเข้าสู่ระบบใหม่');
     }
+    // ข้อความจาก API เขียนเป็นภาษาไทยให้คนอ่านอยู่แล้ว (เช่น 409 ตอนแก้รอบส่งที่มีออเดอร์จอง)
+    // โชว์ JSON ดิบทั้งก้อน = คนหน้าร้านอ่านไม่รู้เรื่องและไม่รู้ว่าต้องทำอะไรต่อ
     let detail = '';
+    let code = '';
     try {
-      detail = JSON.stringify(await res.json());
+      const j = await res.json();
+      code = j?.code || '';
+      detail =
+        typeof j?.message === 'string'
+          ? j.message
+          : j?.reason || j?.message?.reason || JSON.stringify(j);
     } catch {
-      /* ignore */
+      /* ไม่มี body ก็เหลือแค่รหัสสถานะ */
     }
-    throw new Error(`HTTP ${res.status} ${detail}`);
+    const err = new Error(detail || `HTTP ${res.status}`);
+    (err as Error & { status?: number; code?: string }).status = res.status;
+    (err as Error & { status?: number; code?: string }).code = code;
+    throw err;
   }
   return res.status === 204 ? (null as T) : ((await res.json()) as T);
 }
@@ -104,6 +115,8 @@ export interface Order {
   id: string; status: string; paymentMethod: string; paymentStatus: string;
   subtotal: number; deliveryFee: number; total: number;
   note: string | null; cancelReason: string | null; createdAt: string; items: OrderItem[];
+  /** US-22: เวลาเริ่มรอบส่งที่ลูกค้าจองไว้ (null = สั่งรับวันนี้ตามปกติ) */
+  scheduledAt?: string | null;
 }
 export interface DailyReport {
   date: string; count: number; completed: number; cancelled: number;
@@ -308,6 +321,81 @@ export const setStorePause = (brandId: string, isOpen: boolean) =>
 export const setStoreHours = (brandId: string, openTime: string | null, closeTime: string | null) =>
   adminFetch<StoreState>(`/admin/store/hours?brandId=${encodeURIComponent(brandId)}`,
     { method: 'PATCH', body: JSON.stringify({ openTime, closeTime }) });
+
+// ── US-22: สั่งล่วงหน้า D-1 (เวลาปิดรับ + รอบส่ง + ใบสรุปยอดผลิต) ──
+export interface PreorderSlot {
+  id: string; name: string; startTime: string; endTime: string;
+  sortOrder: number; isActive: boolean;
+}
+export interface PreorderSettings {
+  kitchenId: string;
+  kitchenName: string;
+  /** "HH:MM" เวลาไทย — ปิดรับออเดอร์ของวันถัดไป */
+  cutoffTime: string;
+  /** ไม่มีรอบที่เปิดใช้ = ลูกค้าจะไม่เห็นตัวเลือกสั่งล่วงหน้าเลย */
+  preorderEnabled: boolean;
+  serviceDate: string;
+  slots: PreorderSlot[];
+}
+export const getPreorderSettings = (brandId: string) =>
+  adminFetch<PreorderSettings>(`/admin/preorder/settings?brandId=${encodeURIComponent(brandId)}`);
+export const setPreorderCutoff = (brandId: string, cutoffTime: string) =>
+  adminFetch<PreorderSettings>(`/admin/preorder/settings?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'PATCH', body: JSON.stringify({ cutoffTime }) });
+export const createPreorderSlot = (
+  brandId: string,
+  input: { name: string; startTime: string; endTime: string; sortOrder?: number },
+) => adminFetch<PreorderSettings>(`/admin/preorder/slots?brandId=${encodeURIComponent(brandId)}`,
+  { method: 'POST', body: JSON.stringify(input) });
+export const updatePreorderSlot = (
+  brandId: string,
+  id: string,
+  input: { name?: string; startTime?: string; endTime?: string; sortOrder?: number; isActive?: boolean },
+) => adminFetch<PreorderSettings>(`/admin/preorder/slots/${id}?brandId=${encodeURIComponent(brandId)}`,
+  { method: 'PATCH', body: JSON.stringify(input) });
+export const deletePreorderSlot = (brandId: string, id: string) =>
+  adminFetch<PreorderSettings>(`/admin/preorder/slots/${id}?brandId=${encodeURIComponent(brandId)}`,
+    { method: 'DELETE' });
+
+export interface ProdMenuTotal {
+  menuItemId: string; name: string; brandId: string; brandName: string; qty: number;
+}
+export interface ProdDropOrder {
+  orderId: string; brandId: string; brandName: string; customerName: string | null;
+  paymentMethod: string; total: number; boxes: number; note: string | null;
+}
+export interface ProdDrop {
+  key: string; detail: string; lat: number | null; lng: number | null;
+  boxes: number; orderCount: number; codTotal: number; orders: ProdDropOrder[];
+}
+export interface ProductionGroup {
+  /** null = ออเดอร์ที่ไม่ตรงรอบไหน (ต้องตรวจด้วยมือ ห้ามปล่อยให้หาย) */
+  slotId: string | null;
+  name: string;
+  startTime: string | null; endTime: string | null;
+  startAt: string | null; endAt: string | null;
+  orderCount: number; boxCount: number; dropCount: number; revenue: number;
+  menuTotals: ProdMenuTotal[];
+  drops: ProdDrop[];
+}
+export interface ProductionSummary {
+  date: string;
+  cutoffTime: string | null;
+  cutoffAt: string | null;
+  cutoffPassed: boolean;
+  /** ยอดนิ่งแล้ว (ปิดรับแล้ว) — ครัวเริ่มผลิตตามใบนี้ได้ */
+  final: boolean;
+  totals: { orderCount: number; boxCount: number; dropCount: number; revenue: number };
+  groups: ProductionGroup[];
+}
+/** ไม่รับ brandId — รวมทุกแบรนด์ที่แอดมินคนนี้มีสิทธิ์ (ครัวเดียวทำหลายแบรนด์ เหมือน KDS) */
+export const getProductionSummary = (date?: string, slotId?: string) =>
+  adminFetch<ProductionSummary>(
+    '/admin/preorder/summary' +
+      (date || slotId
+        ? '?' + new URLSearchParams({ ...(date ? { date } : {}), ...(slotId ? { slotId } : {}) }).toString()
+        : ''),
+  );
 
 export interface CustomerRow {
   id: string; displayName: string | null; pictureUrl: string | null; lineUserId: string;

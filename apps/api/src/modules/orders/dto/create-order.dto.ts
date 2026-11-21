@@ -56,6 +56,12 @@ export class CreateOrderDto {
   @IsOptional() @IsBoolean() saveAddress?: boolean;
 
   /**
+   * US-22: สั่งล่วงหน้า — รอบส่งของ "วันพรุ่งนี้" ที่ลูกค้าเลือก (ไม่ส่ง = รับวันนี้ตามปกติ)
+   * client ส่งมาได้แค่ "จะใช้รอบไหน" ส่วนเวลาปิดรับ/วันที่ของรอบ server ตัดสินเองทั้งหมด
+   */
+  @IsOptional() @IsString() @IsNotEmpty() deliverySlotId?: string;
+
+  /**
    * US-57: ใช้แต้มแลกส่วนลดกับออเดอร์นี้ (เฉพาะรางวัลชนิดส่วนลดเงิน)
    * ยอดส่วนลดคิดจาก DB ฝั่ง server เท่านั้น — client ส่งมาได้แค่ "จะใช้รางวัลไหน"
    */

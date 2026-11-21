@@ -28,6 +28,20 @@ export function isAccepting(
   return { ok: true };
 }
 
+/**
+ * US-22: รับออเดอร์ "ล่วงหน้า" ได้ไหม — ไม่สนเวลาทำการ เพราะรอบส่งเป็นของวันพรุ่งนี้
+ * แต่ยังเคารพปุ่มพักรับออเดอร์ (isOpen) เสมอ
+ *
+ * ถ้าเช็คเวลาทำการด้วย ลูกค้าจะสั่งล่วงหน้าตอนหัวค่ำไม่ได้ (ครัวปิด 18:00 แต่ปิดรับ 20:00)
+ * ซึ่งเป็นช่วงเวลาหลักที่คนสั่งข้าวของวันรุ่งขึ้น — ทั้งโมเดล D-1 จะใช้ไม่ได้
+ */
+export function isAcceptingPreorder(
+  store: Pick<StoreState, 'isOpen'>,
+): { ok: boolean; reason?: string } {
+  if (!store.isOpen) return { ok: false, reason: 'ร้านพักรับออเดอร์ชั่วคราว' };
+  return { ok: true };
+}
+
 /** เวลาปัจจุบันแบบ "HH:MM" ตามเวลาไทย */
 export function nowHHMMBangkok(): string {
   return new Date().toLocaleTimeString('en-GB', {
